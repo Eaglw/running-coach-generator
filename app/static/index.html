@@ -233,7 +233,7 @@
             <h2 class="text-lg font-semibold text-white flex items-center gap-2">
               <span>🎵</span> Local Music Library
             </h2>
-            <p class="text-xs text-slate-400">Tracks indexed in <code class="text-emerald-400">/data/music</code> for tempo-matched mixing.</p>
+            <p class="text-xs text-slate-400">Tracks indexed in <code class="text-emerald-400 font-mono text-[11px]" id="libraryPathDisplay">loading...</code> for tempo-matched mixing.</p>
           </div>
           <button onclick="scanMusicLibrary()" id="rescanBtn" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-2 transition">
             <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -383,6 +383,22 @@
               <label class="block text-xs font-medium text-slate-400 mb-1">Podcast Channel Title</label>
               <input type="text" id="cfgPodcastTitle" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500" placeholder="Running Coach Daily">
             </div>
+          </div>
+        </div>
+
+        <hr class="border-slate-800" />
+
+        <!-- 4. Music Library Path Settings -->
+        <div class="space-y-4">
+          <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+            <span>📁</span> Music Library Location
+          </h3>
+          <p class="text-xs text-slate-400">Path to your local MP3/FLAC music tracks. You can use your Windows user Music folder or any custom directory.</p>
+          <div class="flex flex-col sm:flex-row gap-2 items-center">
+            <input type="text" id="cfgMusicDir" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="C:\Users\eaglw\Music">
+            <button type="button" onclick="setWindowsMusicFolder()" class="w-full sm:w-auto whitespace-nowrap px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-400 rounded-xl border border-slate-700 transition">
+              Use Windows Music (C:\Users\eaglw\Music)
+            </button>
           </div>
         </div>
 
@@ -684,6 +700,11 @@
       }
     }
 
+    function setWindowsMusicFolder() {
+      const input = document.getElementById('cfgMusicDir');
+      if (input) input.value = 'C:\\Users\\eaglw\\Music';
+    }
+
     async function loadSettings() {
       try {
         const res = await fetch('/api/v1/settings');
@@ -699,6 +720,8 @@
         }
         if (document.getElementById('cfgBaseUrl')) document.getElementById('cfgBaseUrl').value = s.BASE_URL || '';
         if (document.getElementById('cfgPodcastTitle')) document.getElementById('cfgPodcastTitle').value = s.PODCAST_TITLE || '';
+        if (document.getElementById('cfgMusicDir')) document.getElementById('cfgMusicDir').value = s.MUSIC_DIR || '';
+        if (document.getElementById('libraryPathDisplay')) document.getElementById('libraryPathDisplay').textContent = s.MUSIC_DIR || '/data/music';
       } catch (e) {
         console.error('Failed to load settings:', e);
       }
@@ -717,7 +740,8 @@
         TTS_ENGINE: document.getElementById('cfgTtsEngine').value,
         TTS_VOICE: document.getElementById('cfgTtsVoice').value,
         BASE_URL: document.getElementById('cfgBaseUrl').value.trim(),
-        PODCAST_TITLE: document.getElementById('cfgPodcastTitle').value.trim()
+        PODCAST_TITLE: document.getElementById('cfgPodcastTitle').value.trim(),
+        MUSIC_DIR: document.getElementById('cfgMusicDir') ? document.getElementById('cfgMusicDir').value.trim() : ''
       };
 
       try {
@@ -727,6 +751,10 @@
           body: JSON.stringify(payload)
         });
         if (res.ok) {
+          const data = await res.json();
+          if (document.getElementById('libraryPathDisplay') && data.settings && data.settings.MUSIC_DIR) {
+            document.getElementById('libraryPathDisplay').textContent = data.settings.MUSIC_DIR;
+          }
           btn.innerHTML = '<span>✅</span> Saved!';
           setTimeout(() => {
             btn.disabled = false;

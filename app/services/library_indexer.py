@@ -46,12 +46,16 @@ class LibraryIndexer:
         music_dir: Optional[Path] = None,
         cache_path: Optional[Path] = None
     ) -> None:
-        self.music_dir = music_dir or settings.MUSIC_DIR
+        self._custom_music_dir = music_dir
         self.cache_path = cache_path or settings.LIBRARY_CACHE_PATH
         self.music_dir.mkdir(parents=True, exist_ok=True)
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         self._tracks: Dict[str, TrackMetadata] = {}
         self.load_cache()
+
+    @property
+    def music_dir(self) -> Path:
+        return Path(self._custom_music_dir or settings.MUSIC_DIR)
 
     def load_cache(self) -> None:
         """Load indexed tracks from JSON cache if available."""

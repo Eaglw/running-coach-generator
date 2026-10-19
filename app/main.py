@@ -327,7 +327,8 @@ async def update_settings(updates: Dict[str, Any]):
     """Update settings and persist to data/cache/settings.json."""
     allowed = {
         "BASE_URL", "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL",
-        "LLM_API_KEY", "TTS_ENGINE", "TTS_VOICE", "PODCAST_TITLE"
+        "LLM_API_KEY", "TTS_ENGINE", "TTS_VOICE", "PODCAST_TITLE",
+        "MUSIC_DIR"
     }
     filtered = {k: v for k, v in updates.items() if k in allowed}
     settings.save_dynamic_settings(filtered)

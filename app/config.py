@@ -69,6 +69,8 @@ class Settings(BaseSettings):
                     data = json.load(f)
                     for key, val in data.items():
                         if hasattr(self, key):
+                            if key in ("DATA_DIR", "MUSIC_DIR", "CACHE_DIR", "PODCAST_DIR", "TEMP_DIR") and isinstance(val, str):
+                                val = Path(val)
                             setattr(self, key, val)
             except Exception as e:
                 import logging
@@ -85,10 +87,11 @@ class Settings(BaseSettings):
                     current = json.load(f)
             except Exception:
                 current = {}
-        current.update(updates)
         for k, v in updates.items():
             if hasattr(self, k):
-                setattr(self, k, v)
+                val = Path(v) if k in ("DATA_DIR", "MUSIC_DIR", "CACHE_DIR", "PODCAST_DIR", "TEMP_DIR") and isinstance(v, str) else v
+                setattr(self, k, val)
+            current[k] = str(v) if isinstance(v, Path) else v
         tmp = self.DYNAMIC_SETTINGS_PATH.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(current, f, indent=2, ensure_ascii=False)
