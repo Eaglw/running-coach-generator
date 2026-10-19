@@ -250,6 +250,23 @@ async def create_workout_from_json(
 
 
 @app.post(
+    "/api/v1/workout/preview",
+    response_model=WorkoutRequest,
+    summary="Preview parsed workout structure from prompt without generating audio"
+)
+async def preview_workout_structure(payload: PromptWorkoutRequest):
+    """
+    Parses a natural language prompt into a structured WorkoutRequest without triggering audio synthesis.
+    Allows the runner to verify interpreted segments, durations, BPM ranges, and cue timings.
+    """
+    return llm_coach.parse_prompt_to_workout(
+        prompt=payload.prompt,
+        coach_persona=payload.coach_persona,
+        language=payload.language
+    )
+
+
+@app.post(
     "/api/v1/workout/from-text",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=JobStatusResponse,

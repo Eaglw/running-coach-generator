@@ -126,9 +126,51 @@
                 </div>
               </div>
 
-              <!-- Submit Button -->
-              <button id="generateBtn" onclick="submitWorkoutPrompt()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 font-semibold text-white shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-[0.99]">
-                <span>🎧</span> Generate & Publish to Podcast
+              <!-- Action Buttons -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <button id="previewBtn" onclick="previewWorkoutStructure()" class="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/50 font-semibold text-emerald-400 flex items-center justify-center gap-2 transition active:scale-[0.99]">
+                  <span>🔍</span> Check Divisions & Preview
+                </button>
+                <button id="generateBtn" onclick="submitWorkoutPrompt()" class="py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 font-semibold text-white shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-[0.99]">
+                  <span>🎧</span> Quick Generate Full Audio
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workout Interpretation Check & Preview Card -->
+          <div id="workoutPreviewCard" class="hidden glass-card rounded-2xl p-6 border border-emerald-500/30 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Workout Interpretation Check</span>
+                <h3 id="previewTitle" class="text-base font-bold text-white"></h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="previewTotalDuration" class="text-xs font-mono font-semibold text-slate-300 px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700"></span>
+              </div>
+            </div>
+
+            <!-- Visual Timeline Bar -->
+            <div>
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                <span>Timeline Divisions</span>
+                <span id="previewSegmentCount" class="font-mono text-emerald-400"></span>
+              </div>
+              <div id="previewTimelineBar" class="w-full h-3.5 rounded-full overflow-hidden flex bg-slate-800 border border-slate-700/50">
+                <!-- Dynamically filled with color segments -->
+              </div>
+            </div>
+
+            <!-- Segments Detail List -->
+            <div id="previewSegmentsList" class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+              <!-- Dynamically populated segment items -->
+            </div>
+
+            <!-- Confirmation & Audio Generation Button -->
+            <div class="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <span class="text-xs text-slate-400">Divisions correct? Ready to synthesize voice & mix tracks:</span>
+              <button id="confirmGenerateBtn" onclick="confirmAndGenerateWorkout()" class="py-2.5 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-[0.99]">
+                <span>✅ Looks Good! Generate & Mix Audio 🎧</span>
               </button>
             </div>
           </div>
@@ -468,6 +510,149 @@
       if (tabId === 'tab-podcast') loadEpisodes();
       if (tabId === 'tab-library') loadLibrary();
       if (tabId === 'tab-settings') loadSettings();
+    }
+
+    let currentPreviewWorkout = null;
+
+    // Preview Workout Divisions & Structure
+    async function previewWorkoutStructure() {
+      const promptText = document.getElementById('promptInput').value.trim();
+      const persona = document.getElementById('coachPersona').value;
+      const language = document.getElementById('workoutLanguage') ? document.getElementById('workoutLanguage').value : 'it';
+
+      if (!promptText) {
+        alert('Please enter a description for your workout to preview!');
+        return;
+      }
+
+      const previewBtn = document.getElementById('previewBtn');
+      previewBtn.disabled = true;
+      previewBtn.innerHTML = '<span>⏳</span> Analyzing divisions...';
+
+      try {
+        const res = await fetch('/api/v1/workout/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptText, coach_persona: persona, language: language })
+        });
+        if (!res.ok) throw new Error('Preview failed with status ' + res.status);
+        const workout = await res.json();
+        currentPreviewWorkout = workout;
+        renderWorkoutPreview(workout);
+      } catch (err) {
+        alert('Error analyzing workout: ' + err);
+      } finally {
+        previewBtn.disabled = false;
+        previewBtn.innerHTML = '<span>🔍</span> Check Divisions & Preview';
+      }
+    }
+
+    function renderWorkoutPreview(workout) {
+      document.getElementById('previewTitle').textContent = workout.workout_title || 'Guided Workout';
+      const totalMinutes = Math.round(workout.total_duration_sec / 60);
+      document.getElementById('previewTotalDuration').textContent = `⏱️ ${totalMinutes} min (${workout.total_duration_sec}s)`;
+      document.getElementById('previewSegmentCount').textContent = `${workout.segments.length} segments`;
+
+      // Render Visual Timeline Bar
+      const timelineBar = document.getElementById('previewTimelineBar');
+      timelineBar.innerHTML = '';
+      const totalSec = workout.total_duration_sec || 1;
+
+      const intensityColors = {
+        'low': 'bg-emerald-500',
+        'medium': 'bg-teal-400',
+        'high': 'bg-amber-400',
+        'max': 'bg-rose-500'
+      };
+
+      const intensityBadges = {
+        'low': 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30',
+        'medium': 'bg-teal-950/60 text-teal-300 border-teal-500/30',
+        'high': 'bg-amber-950/60 text-amber-300 border-amber-500/30',
+        'max': 'bg-rose-950/60 text-rose-300 border-rose-500/30'
+      };
+
+      workout.segments.forEach(seg => {
+        const pct = Math.max(4, (seg.duration_sec / totalSec) * 100);
+        const colClass = intensityColors[seg.intensity.toLowerCase()] || 'bg-teal-400';
+        const blk = document.createElement('div');
+        blk.className = `h-full ${colClass} border-r border-slate-900 last:border-0 transition-all`;
+        blk.style.width = pct + '%';
+        blk.title = `${seg.name}: ${Math.round(seg.duration_sec / 60)}m (${seg.target_bpm_range[0]}-${seg.target_bpm_range[1]} BPM)`;
+        timelineBar.appendChild(blk);
+      });
+
+      // Render Segments Detail List
+      const list = document.getElementById('previewSegmentsList');
+      list.innerHTML = '';
+
+      workout.segments.forEach((seg, idx) => {
+        const durMin = Math.floor(seg.duration_sec / 60);
+        const durSec = seg.duration_sec % 60;
+        const durText = durSec > 0 ? `${durMin}m ${durSec}s` : `${durMin} min`;
+        const badgeClass = intensityBadges[seg.intensity.toLowerCase()] || 'bg-slate-800 text-slate-300 border-slate-700';
+
+        const cueTimes = (seg.coach_cues || []).map(c => {
+          const m = Math.floor(c.offset_sec / 60);
+          const s = (c.offset_sec % 60).toString().padStart(2, '0');
+          return `${m}:${s}`;
+        }).join(', ');
+
+        const card = document.createElement('div');
+        card.className = 'p-3 bg-slate-900/90 rounded-xl border border-slate-800 flex flex-col gap-1.5 text-xs';
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-white flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full ${intensityColors[seg.intensity.toLowerCase()] || 'bg-teal-400'}"></span>
+              ${idx + 1}. ${seg.name}
+            </span>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[11px] font-semibold border ${badgeClass} uppercase">
+                ${seg.intensity}
+              </span>
+              <span class="font-mono font-semibold text-emerald-400 bg-slate-800 px-2 py-0.5 rounded">
+                ${durText}
+              </span>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-400 text-[11px] pt-0.5">
+            <span>🎵 <strong>BPM:</strong> ${seg.target_bpm_range[0]} - ${seg.target_bpm_range[1]}</span>
+            <span>⚡ <strong>Pace:</strong> ${seg.target_pace || 'Dynamic'}</span>
+            <span>🗣️ <strong>Cues (${(seg.coach_cues || []).length}):</strong> at ${cueTimes || 'None'}</span>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+
+      const cardContainer = document.getElementById('workoutPreviewCard');
+      cardContainer.classList.remove('hidden');
+      cardContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function confirmAndGenerateWorkout() {
+      if (!currentPreviewWorkout) {
+        alert('No previewed workout found!');
+        return;
+      }
+
+      const confirmBtn = document.getElementById('confirmGenerateBtn');
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span>⏳</span> Synthesizing & Mixing...';
+
+      try {
+        const res = await fetch('/api/v1/workout/from-json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentPreviewWorkout)
+        });
+        const data = await res.json();
+        activeJobId = data.job_id;
+        startJobPolling(activeJobId);
+      } catch (err) {
+        alert('Connection error: ' + err);
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<span>✅ Looks Good! Generate & Mix Audio 🎧</span>';
+      }
     }
 
     // Submit Workout Prompt
