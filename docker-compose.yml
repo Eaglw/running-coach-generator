@@ -1,0 +1,19 @@
+services:
+  running-coach-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: running-coach-generator
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/data
+      - MUSIC_DIR=/data/music
+      - CACHE_DIR=/data/cache
+      - PODCAST_DIR=/data/podcasts
+      - TEMP_DIR=/data/temp
