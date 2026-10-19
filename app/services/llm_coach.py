@@ -17,18 +17,26 @@ def get_workout_system_prompt(language: str = "it") -> str:
         return """You are an expert running coach and athletics trainer.
 Your job is to convert a natural language workout description into a strict, validated JSON specification for an audio-guided workout.
 
-CRITICAL REQUIREMENT:
-All user-facing titles, segment names, cue intents, and coaching speech MUST BE IN NATURAL MOTIVATING ENGLISH.
+CRITICAL REQUIREMENTS:
+1. Language: Strictly NATURAL MOTIVATING ENGLISH for `workout_title`, `segment.name`, `intent`, and `spoken_text`.
+2. REPETITIONS & INTERVALS RULE:
+   When the user asks for repetitions (e.g. "10x 1 min fast and 1 min recovery", "8x 30s sprint and 30s easy", or "5x 2 minutes hard and 1 minute jog"):
+   You MUST explicitly expand each repetition into separate alternating segments in the "segments" list:
+   - "Interval 1/10 (Fast)" (e.g. duration_sec: 60, intensity: "high", target_bpm_range: [160, 180], target_pace: "4:00/km")
+   - "Recovery 1/10 (Easy)" (e.g. duration_sec: 60, intensity: "low", target_bpm_range: [120, 135], target_pace: "5:45/km")
+   - "Interval 2/10 (Fast)"...
+   - "Recovery 2/10 (Easy)"...
+   Do NOT combine intervals into a single generic block! Each fast burst and recovery burst must be its own segment.
 
 Expected JSON structure:
 {
-  "workout_title": "Progressive Tempo Run with Strides",
+  "workout_title": "Interval Workout: 10x 1-Minute Strides",
   "coach_persona": "tecnico_motivazionale",
-  "total_duration_sec": 2700,
+  "total_duration_sec": 2400,
   "language": "en",
   "segments": [
     {
-      "name": "Progressive Warmup",
+      "name": "Warmup Jog",
       "duration_sec": 600,
       "intensity": "low",
       "target_bpm_range": [115, 130],
@@ -36,17 +44,45 @@ Expected JSON structure:
       "coach_cues": [
         {
           "offset_sec": 5,
-          "intent": "Welcome runner, explain workout goals and start easy jog.",
+          "intent": "Welcome runner, start easy jog with relaxed shoulders and smooth breathing.",
           "spoken_text": null
         },
         {
           "offset_sec": 180,
-          "intent": "Posture check: relax shoulders, upright posture and relaxed breathing.",
+          "intent": "Posture check: upright spine, compact arm swing.",
           "spoken_text": null
         },
         {
           "offset_sec": 570,
-          "intent": "Warmup ending notice: 30 seconds until tempo block.",
+          "intent": "Warmup ending: 30 seconds until the first hard interval.",
+          "spoken_text": null
+        }
+      ]
+    },
+    {
+      "name": "Interval 1/10 (Fast)",
+      "duration_sec": 60,
+      "intensity": "high",
+      "target_bpm_range": [160, 180],
+      "target_pace": "4:00/km",
+      "coach_cues": [
+        {
+          "offset_sec": 2,
+          "intent": "Repetition 1: drive forward, quick cadence and strong arms!",
+          "spoken_text": null
+        }
+      ]
+    },
+    {
+      "name": "Recovery 1/10 (Easy)",
+      "duration_sec": 60,
+      "intensity": "low",
+      "target_bpm_range": [120, 135],
+      "target_pace": "5:45/km",
+      "coach_cues": [
+        {
+          "offset_sec": 2,
+          "intent": "Great effort! Ease into a recovery jog, deep breaths.",
           "spoken_text": null
         }
       ]
@@ -55,35 +91,40 @@ Expected JSON structure:
 }
 
 Key rules:
-1. Language: Strictly ENGLISH for `workout_title`, `segment.name`, `intent`, and `spoken_text`.
-2. `coach_cues` placement:
-   - Segment start (offset_sec ~5s): Announce segment goal, target pace and mindset.
-   - Periodic cues: In any segment longer than 3 minutes, schedule a coaching cue EVERY 120 TO 180 SECONDS (every 2-3 minutes maximum). Alternate topics:
-     * Posture & Form (relax shoulders, gaze forward at horizon, compact arm swing).
-     * Cadence & Footstrike (quick light steps, 170-180 SPM, landing under hips).
-     * Breathing (deep diaphragmatic rhythm, exhaling fully to clear fatigue).
-     * Effort Check (confirming perceived exertion matches the current intensity zone).
-   - Segment warning (offset_sec ~30s before segment duration): Alert runner of upcoming pace change.
-3. `target_bpm_range` must align with intensity: low -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
-4. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
-5. Output ONLY the valid JSON object, without markdown formatting or surrounding conversational text.
+1. `coach_cues` placement:
+   - Segment start (offset_sec ~2-5s): Announce segment goal, rep number or target pace.
+   - In segments longer than 3 minutes, schedule cues every 120-150 seconds.
+   - For fast intervals of 60s or less, 1 motivational cue right at the start (offset_sec ~2s) is sufficient.
+2. `target_bpm_range`: low -> [115, 130], medium -> [130, 150], high/threshold -> [155, 175], max/sprint -> [170, 190].
+3. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
+4. Output ONLY the valid JSON object.
 """
     # Default: Italian
     return """You are an expert running coach and athletics trainer.
 Your job is to convert a natural language workout description into a strict, validated JSON specification for an audio-guided workout.
 
-CRITICAL REQUIREMENT:
-All user-facing titles, segment names, cue intents, and coaching speech MUST BE IN NATURAL MOTIVATIONAL ITALIAN, because the neural voice synthesizers (Piper and Kokoro) are strictly Italian models. Do not use English for workout titles, segment names, or cue intents.
+REQUISITI FONDAMENTALI:
+1. Lingua: Strettamente ITALIANO NATURALE E MOTIVAZIONALE per `workout_title`, `segment.name`, `intent` e `spoken_text` (i modelli vocali Piper e Kokoro sono esclusivamente in italiano).
+2. REGOLA RIPETUTE E INTERVAL TRAINING:
+   Se l'utente richiede ripetute o intervalli (es. "10 volte un minuto forte e un minuto lento", "10x 1 min forte e 1 min piano", "5x 2 minuti forte e 1 recupero", "8x 30s scatto e 30s piano"):
+   DEVI generare esplicitamente OGNI SINGOLA ripetuta e recupero come segmenti alternati e separati nell'array "segments":
+   - "Riscaldamento Iniziale" (es. duration_sec: 600, intensity: "low")
+   - "Ripetuta 1/10 (Forte)" (es. duration_sec: 60, intensity: "high", target_bpm_range: [160, 180], target_pace: "4:00/km")
+   - "Recupero 1/10 (Piano)" (es. duration_sec: 60, intensity: "low", target_bpm_range: [120, 135], target_pace: "5:45/km")
+   - "Ripetuta 2/10 (Forte)"...
+   - "Recupero 2/10 (Piano)"...
+   fino al termine di tutte le ripetute, seguito dal Defaticamento Finale!
+   NON raggruppare MAI le ripetute in un unico blocco generico! Ogni variazione deve essere un segmento indipendente.
 
-Expected JSON structure:
+Struttura JSON attesa:
 {
-  "workout_title": "Corsa Progressiva con Variazioni di Ritmo",
+  "workout_title": "Ripetute 10x 1 Minuto Forte e 1 Minuto Piano",
   "coach_persona": "tecnico_motivazionale",
-  "total_duration_sec": 2700,
+  "total_duration_sec": 2400,
   "language": "it",
   "segments": [
     {
-      "name": "Riscaldamento Progressivo",
+      "name": "Riscaldamento Iniziale",
       "duration_sec": 600,
       "intensity": "low",
       "target_bpm_range": [115, 130],
@@ -91,17 +132,45 @@ Expected JSON structure:
       "coach_cues": [
         {
           "offset_sec": 5,
-          "intent": "Benvenuto runner, spieghiamo la sessione e avviamo una corsa leggera di riscaldamento.",
+          "intent": "Benvenuto runner, iniziamo con una corsa facile e postura rilassata.",
           "spoken_text": null
         },
         {
           "offset_sec": 180,
-          "intent": "Check postura: spalle rilassate, busto eretto e respirazione sciolta.",
+          "intent": "Check postura: spalle morbide, sguardo all'orizzonte e respirazione fluida.",
           "spoken_text": null
         },
         {
           "offset_sec": 570,
-          "intent": "Preavviso fine riscaldamento: 30 secondi al cambio ritmo verso il blocco centrale.",
+          "intent": "Fine riscaldamento: 30 secondi alla prima ripetuta veloce.",
+          "spoken_text": null
+        }
+      ]
+    },
+    {
+      "name": "Ripetuta 1/10 (Forte)",
+      "duration_sec": 60,
+      "intensity": "high",
+      "target_bpm_range": [160, 180],
+      "target_pace": "4:00/km",
+      "coach_cues": [
+        {
+          "offset_sec": 2,
+          "intent": "Ripetuta uno: via! Aumenta il ritmo, frequenza rapida e spingi forte!",
+          "spoken_text": null
+        }
+      ]
+    },
+    {
+      "name": "Recupero 1/10 (Piano)",
+      "duration_sec": 60,
+      "intensity": "low",
+      "target_bpm_range": [120, 135],
+      "target_pace": "5:45/km",
+      "coach_cues": [
+        {
+          "offset_sec": 2,
+          "intent": "Ottimo lavoro! Rallenta il passo a corsa blanda e respira a fondo.",
           "spoken_text": null
         }
       ]
@@ -109,19 +178,14 @@ Expected JSON structure:
   ]
 }
 
-Key rules:
-1. Language: Strictly ITALIAN for `workout_title`, `segment.name`, `intent`, and `spoken_text`.
-2. `coach_cues` placement:
-   - Segment start (offset_sec ~5s): Announce segment goal, target pace and mindset in Italian.
-   - Periodic cues: In any segment longer than 3 minutes, schedule a coaching cue EVERY 120 TO 180 SECONDS (every 2-3 minutes maximum). Alternate topics:
-     * Postura e Assetto (rilassare le spalle, sguardo all'orizzonte, oscillazione gomiti compatta).
-     * Cadenza e Appoggio (passi rapidi e leggeri, 170-180 SPM, appoggio sotto il bacino).
-     * Respirazione (ritmo costante e profondo, espirazione completa).
-     * Gestione dello Sforzo (percezione della fatica adeguata alla zona d'intensità).
-   - Segment warning (offset_sec ~30s before segment duration): Alert runner of upcoming pace change in Italian.
-3. `target_bpm_range` must align with intensity: low -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
-4. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
-5. Output ONLY the valid JSON object, without markdown formatting or surrounding conversational text.
+Regole chiave:
+1. Posizionamento `coach_cues`:
+   - Avvio segmento (offset_sec ~2-5s): Annuncia l'obiettivo, il numero di ripetuta o il ritmo target.
+   - Nei segmenti lunghi (> 3 minuti), inserisci un cue ogni 120-150 secondi.
+   - Nelle ripetute brevi (<= 60s), 1 cue all'inizio dello scatto o del recupero è sufficiente per non sovraccaricare la voce.
+2. `target_bpm_range`: low -> [115, 130], medium -> [130, 150], high/threshold -> [155, 175], max/sprint -> [170, 190].
+3. `total_duration_sec` deve corrispondere esattamente alla somma di tutti i `duration_sec`.
+4. Restituisci ESCLUSIVAMENTE l'oggetto JSON valido.
 """
 
 def get_script_system_prompt(language: str = "it", coach_persona: str = "tecnico_motivazionale") -> str:
@@ -261,7 +325,7 @@ class LLMCoach:
                 {"role": "user", "content": user_prompt}
             ],
             "temperature": 0.2 if force_json else 0.7,
-            "max_tokens": 1200 if force_json else 150
+            "max_tokens": 4096 if force_json else 200
         }
         if force_json:
             try:
@@ -460,12 +524,177 @@ class LLMCoach:
 
     def _heuristic_parse(self, prompt: str, persona: str, language: str = "it") -> WorkoutRequest:
         """
-        Heuristic rule-based parser in Italian or English when no LLM is configured.
+        Heuristic rule-based parser in Italian or English supporting:
+        1. Repetitions & Interval training (e.g. '10 volte 1 min forte e 1 min piano', '10x 1m veloce e 1m lento').
+        2. Continuous progressive / tempo runs (warmup, main, cooldown).
         """
         prompt_lower = prompt.lower()
         segments: List[Segment] = []
         lang = language.lower().strip()
 
+        word_nums = {
+            "un": 1, "uno": 1, "una": 1, "one": 1,
+            "due": 2, "two": 2,
+            "tre": 3, "three": 3,
+            "quattro": 4, "four": 4,
+            "cinque": 5, "five": 5,
+            "sei": 6, "six": 6,
+            "sette": 7, "seven": 7,
+            "otto": 8, "eight": 8,
+            "nove": 9, "nine": 9,
+            "dieci": 10, "ten": 10,
+            "dodici": 12, "twelve": 12,
+            "quindici": 15, "fifteen": 15,
+            "venti": 20, "twenty": 20
+        }
+
+        def to_num(s: str) -> int:
+            s = s.strip().lower()
+            return int(s) if s.isdigit() else word_nums.get(s, 1)
+
+        def to_sec(val_s: str, unit_s: str) -> int:
+            v = to_num(val_s)
+            u = unit_s.lower()
+            if any(k in u for k in ["s", "sec", "second"]):
+                return max(15, v)
+            return max(30, v * 60)
+
+        num_pat = r"(?:\d+|un|uno|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|dodici|quindici|venti|one|two|three|four|five|six|seven|eight|nine|ten|twelve)"
+        unit_pat = r"(?:minuti|minuto|min|m|secondi|secondo|sec|s)"
+
+        # Check for repetition / interval patterns:
+        # Pattern A: "10x 1 min forte e 1 min lento" / "10 volte 1 min forte e 1 min piano"
+        match_a = re.search(
+            rf"(?:ripetute\s*)?({num_pat})\s*(?:x|\*|volte|ripetute(?:\s*da)?)\s*({num_pat})\s*({unit_pat})\s*(?:forte|veloce|scatto|sprint|hard|fast)\s*(?:e|,)?\s*({num_pat})\s*({unit_pat})\s*(?:piano|lento|recupero|facile|blando|easy|jog|slow)",
+            prompt_lower
+        )
+        # Pattern B: "1 minuto forte e 1 minuto piano per 10 volte"
+        match_b = re.search(
+            rf"({num_pat})\s*({unit_pat})\s*(?:forte|veloce|scatto|sprint|hard|fast)\s*(?:e|,)?\s*({num_pat})\s*({unit_pat})\s*(?:piano|lento|recupero|facile|blando|easy|jog|slow)\s*(?:per|\*|x)\s*({num_pat})\s*(?:volte)?",
+            prompt_lower
+        )
+
+        if match_a or match_b:
+            if match_a:
+                reps = to_num(match_a.group(1))
+                fast_dur = to_sec(match_a.group(2), match_a.group(3))
+                slow_dur = to_sec(match_a.group(4), match_a.group(5))
+            else:
+                fast_dur = to_sec(match_b.group(1), match_b.group(2))
+                slow_dur = to_sec(match_b.group(3), match_b.group(4))
+                reps = to_num(match_b.group(5))
+
+            reps = max(2, min(reps, 30))
+
+            # Warmup extraction
+            w_match = re.search(rf"(?:riscaldamento|warmup|warm\s*up)\s*(?:da|per|di)?\s*({num_pat})\s*({unit_pat})", prompt_lower) or \
+                      re.search(rf"({num_pat})\s*({unit_pat})\s*(?:di\s*)?(?:riscaldamento|warmup|warm\s*up)", prompt_lower)
+            warmup_dur = to_sec(w_match.group(1), w_match.group(2)) if w_match else 600
+
+            # Cooldown extraction
+            c_match = re.search(rf"(?:defaticamento|cooldown|cool\s*down)\s*(?:da|per|di)?\s*({num_pat})\s*({unit_pat})", prompt_lower) or \
+                      re.search(rf"({num_pat})\s*({unit_pat})\s*(?:di\s*)?(?:defaticamento|cooldown|cool\s*down)", prompt_lower)
+            cooldown_dur = to_sec(c_match.group(1), c_match.group(2)) if c_match else 300
+
+            if lang == "en":
+                title = f"Interval Workout: {reps}x {round(fast_dur/60, 1) if fast_dur%60!=0 else int(fast_dur/60)}m Fast / {round(slow_dur/60, 1) if slow_dur%60!=0 else int(slow_dur/60)}m Easy"
+                # Warmup
+                segments.append(Segment(
+                    name="Initial Warmup",
+                    duration_sec=warmup_dur,
+                    intensity="low",
+                    target_bpm_range=(118, 128),
+                    target_pace="5:30/km",
+                    coach_cues=[
+                        CoachCue(offset_sec=5, intent="Welcome runner! Start easy warmup jog to prepare muscles for intervals"),
+                        CoachCue(offset_sec=max(10, warmup_dur - 30), intent="Notice: 30 seconds until the first fast repetition")
+                    ]
+                ))
+                # Alternating Intervals
+                for i in range(1, reps + 1):
+                    segments.append(Segment(
+                        name=f"Interval {i}/{reps} (Fast)",
+                        duration_sec=fast_dur,
+                        intensity="high" if fast_dur >= 60 else "max",
+                        target_bpm_range=(160, 180),
+                        target_pace="4:00/km",
+                        coach_cues=[CoachCue(offset_sec=2, intent=f"Repetition {i} of {reps}: GO! Push your pace with high cadence!")]
+                    ))
+                    segments.append(Segment(
+                        name=f"Recovery {i}/{reps} (Easy)",
+                        duration_sec=slow_dur,
+                        intensity="low",
+                        target_bpm_range=(120, 135),
+                        target_pace="5:45/km",
+                        coach_cues=[CoachCue(offset_sec=2, intent=f"Good effort on rep {i}! Ease into recovery jog and catch your breath.")]
+                    ))
+                # Cooldown
+                segments.append(Segment(
+                    name="Final Cool Down",
+                    duration_sec=cooldown_dur,
+                    intensity="low",
+                    target_bpm_range=(110, 125),
+                    target_pace="6:00/km",
+                    coach_cues=[
+                        CoachCue(offset_sec=5, intent="Fantastic job completing all repetitions! Ease down into a relaxing cool down jog."),
+                        CoachCue(offset_sec=max(10, cooldown_dur - 20), intent="Session complete: walk and recover.")
+                    ]
+                ))
+            else:
+                title = f"Ripetute: {reps}x {round(fast_dur/60, 1) if fast_dur%60!=0 else int(fast_dur/60)} Min Forte e {round(slow_dur/60, 1) if slow_dur%60!=0 else int(slow_dur/60)} Min Piano"
+                # Warmup
+                segments.append(Segment(
+                    name="Riscaldamento Iniziale",
+                    duration_sec=warmup_dur,
+                    intensity="low",
+                    target_bpm_range=(118, 128),
+                    target_pace="5:30/km",
+                    coach_cues=[
+                        CoachCue(offset_sec=5, intent="Benvenuto runner! Iniziamo con un riscaldamento facile per preparare il corpo alle ripetute"),
+                        CoachCue(offset_sec=max(10, warmup_dur - 30), intent="Preavviso: mancano 30 secondi alla prima ripetuta veloce")
+                    ]
+                ))
+                # Alternating Intervals
+                for i in range(1, reps + 1):
+                    segments.append(Segment(
+                        name=f"Ripetuta {i}/{reps} (Forte)",
+                        duration_sec=fast_dur,
+                        intensity="high" if fast_dur >= 60 else "max",
+                        target_bpm_range=(160, 180),
+                        target_pace="4:00/km",
+                        coach_cues=[CoachCue(offset_sec=2, intent=f"Ripetuta {i} di {reps}: via! Aumenta il ritmo, falcata scattante e spingi forte!")]
+                    ))
+                    segments.append(Segment(
+                        name=f"Recupero {i}/{reps} (Piano)",
+                        duration_sec=slow_dur,
+                        intensity="low",
+                        target_bpm_range=(120, 135),
+                        target_pace="5:45/km",
+                        coach_cues=[CoachCue(offset_sec=2, intent=f"Ottimo scatto numero {i}! Rallenta a corsa sciolta e recupera il fiato.")]
+                    ))
+                # Cooldown
+                segments.append(Segment(
+                    name="Defaticamento Finale",
+                    duration_sec=cooldown_dur,
+                    intensity="low",
+                    target_bpm_range=(110, 125),
+                    target_pace="6:00/km",
+                    coach_cues=[
+                        CoachCue(offset_sec=5, intent="Grandissimo lavoro, serie di ripetute completata con successo! Ora corsa lentissima di defaticamento."),
+                        CoachCue(offset_sec=max(10, cooldown_dur - 20), intent="Allenamento concluso: complimenti, cammina e recupera.")
+                    ]
+                ))
+
+            total_sec = sum(s.duration_sec for s in segments)
+            return WorkoutRequest(
+                workout_title=title,
+                coach_persona=persona,
+                total_duration_sec=total_sec,
+                language=lang,
+                segments=segments
+            )
+
+        # Standard non-interval breakdown
         minutes_matches = re.findall(r"(\d+)\s*(?:min|minuti|m\b)", prompt_lower)
         durations = [int(m) * 60 for m in minutes_matches] if minutes_matches else [600, 1200, 600]
 
