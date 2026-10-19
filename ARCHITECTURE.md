@@ -101,6 +101,10 @@ When maintaining or extending this codebase, **do not revert** these design deci
   - **Connection Testing:** `POST /api/v1/settings/test-llm` sends a lightweight ping prompt to measure roundtrip latency and catch model configuration issues prior to running workouts.
 * Settings edited in the Web GUI are saved to `/data/cache/settings.json` via `settings.save_dynamic_settings()`, surviving container rebuilds and server restarts.
 
+### H. Dynamic Music Directory Configuration
+* In addition to the default `./data/music` container directory, `Settings.MUSIC_DIR` is dynamically configurable at runtime via the Web GUI and `POST /api/v1/settings`.
+* `LibraryIndexer.music_dir` is implemented as a dynamic property referencing `settings.MUSIC_DIR`. This allows scanning any host folder (such as a local Windows user music library `C:\Users\<user>\Music`) seamlessly without code modifications.
+
 ---
 
 ## 4. Background Job Pipeline Flow
