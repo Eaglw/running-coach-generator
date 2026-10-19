@@ -299,13 +299,15 @@
                 <th class="py-3 px-4">Title</th>
                 <th class="py-3 px-4">Artist</th>
                 <th class="py-3 px-4">BPM</th>
+                <th class="py-3 px-4">Energy</th>
+                <th class="py-3 px-4">Drop / Intro</th>
                 <th class="py-3 px-4">Duration</th>
-                <th class="py-3 px-4">BPM Source</th>
+                <th class="py-3 px-4">Source</th>
               </tr>
             </thead>
             <tbody id="libraryTableBody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="5" class="py-4 text-center text-slate-500 font-sans">Loading music tracks...</td>
+                <td colspan="7" class="py-4 text-center text-slate-500 font-sans">Loading music tracks...</td>
               </tr>
             </tbody>
           </table>
@@ -834,19 +836,36 @@
           tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans">No music tracks found in /data/music. Place MP3 or FLAC files in the folder and click "Rescan Library".</td></tr>';
           return;
         }
-        tbody.innerHTML = tracks.map(t => `
+        const energyColors = {
+          'low': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+          'medium': 'bg-teal-500/10 text-teal-300 border-teal-500/20',
+          'high': 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+          'max': 'bg-rose-500/10 text-rose-300 border-rose-500/20'
+        };
+
+        tbody.innerHTML = tracks.map(t => {
+          const eBadge = energyColors[(t.energy || 'medium').toLowerCase()] || energyColors['medium'];
+          const dropText = (t.intro_sec && t.intro_sec > 0) ? `${t.intro_sec}s` : 'Instant';
+          return `
           <tr class="hover:bg-slate-900/40">
             <td class="py-2.5 px-4 font-sans font-medium text-white">${t.title}</td>
             <td class="py-2.5 px-4 font-sans text-slate-400">${t.artist}</td>
             <td class="py-2.5 px-4 font-bold text-emerald-400">${t.bpm}</td>
+            <td class="py-2.5 px-4">
+              <span class="text-[10px] px-2 py-0.5 rounded border uppercase font-sans font-semibold ${eBadge}">
+                ${t.energy || 'medium'}
+              </span>
+            </td>
+            <td class="py-2.5 px-4 text-slate-300 text-[11px]">${dropText}</td>
             <td class="py-2.5 px-4 text-slate-400">${Math.floor(t.duration_sec / 60)}:${String(Math.floor(t.duration_sec % 60)).padStart(2, '0')}</td>
             <td class="py-2.5 px-4">
-              <span class="text-[10px] px-2 py-0.5 rounded ${t.bpm_source === 'id3' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'}">
+              <span class="text-[10px] px-2 py-0.5 rounded border ${t.bpm_source === 'id3' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}">
                 ${t.bpm_source}
               </span>
             </td>
           </tr>
-        `).join('');
+          `;
+        }).join('');
       } catch (e) {
         console.error(e);
       }

@@ -32,6 +32,8 @@ class TrackMetadata(BaseModel):
     duration_sec: float
     bpm: int
     bpm_source: str  # "id3" or "librosa_analysis"
+    energy: str = "medium"  # "low", "medium", "high", "max"
+    intro_sec: float = 0.0  # seconds before main beat / drop kicks in
     mtime: float
 
 
@@ -134,23 +136,66 @@ class LibraryIndexer:
 
         return title, artist, duration_sec, bpm
 
-    def _compute_fallback_bpm(self, file_path: Path, duration_sec: float) -> Tuple[int, str]:
+    def _analyze_audio_properties(
+        self,
+        file_path: Path,
+        duration_sec: float,
+        id3_bpm: Optional[int] = None
+    ) -> Tuple[int, str, str, float]:
         """
-        Calculate BPM using ffmpeg to decode a 60-second middle slice to raw PCM float32,
-        then analyze with librosa.beat.beat_track(start_bpm=128.0).
-        Returns (bpm, bpm_source).
+        Analyzes audio file using FFmpeg and librosa:
+        1. Estimates BPM (using id3_bpm if present, else librosa beat_track on a 60s slice).
+        2. Detects intro_sec (where the main beat / drop kicks in via RMS envelope).
+        3. Classifies energy level ('low', 'medium', 'high', 'max') combining RMS density and tempo.
+        Returns: (bpm, bpm_source, energy, intro_sec)
         """
-        target_slice_duration = 60.0
+        target_slice_duration = min(60.0, max(10.0, duration_sec))
         if duration_sec > target_slice_duration:
             offset = max(0.0, (duration_sec - target_slice_duration) / 2.0)
         else:
             offset = 0.0
-            target_slice_duration = max(5.0, duration_sec)
+
+        bpm = id3_bpm if (id3_bpm is not None and id3_bpm > 0) else 120
+        bpm_source = "id3" if (id3_bpm is not None and id3_bpm > 0) else "fallback_default"
+        energy = "medium"
+        intro_sec = 0.0
 
         try:
             import librosa
 
-            cmd = [
+            # 1. Decode head slice (first 40s) for intro & drop analysis
+            head_duration = min(40.0, duration_sec)
+            cmd_head = [
+                "ffmpeg", "-v", "error",
+                "-ss", "0",
+                "-t", str(head_duration),
+                "-i", str(file_path),
+                "-f", "f32le",
+                "-ac", "1",
+                "-ar", "22050",
+                "-"
+            ]
+            res_head = subprocess.run(cmd_head, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res_head.stdout and len(res_head.stdout) >= 22050 * 2:
+                y_head = np.frombuffer(res_head.stdout, dtype=np.float32)
+                # Compute RMS envelope to find where the main beat drops
+                hop_len = 512
+                rms_head = librosa.feature.rms(y=y_head, frame_length=2048, hop_length=hop_len)[0]
+                if rms_head.size > 0:
+                    loud_p80 = float(np.percentile(rms_head, 80))
+                    if loud_p80 > 0.01:
+                        threshold = 0.35 * loud_p80
+                        times = librosa.frames_to_time(np.arange(rms_head.size), sr=22050, hop_length=hop_len)
+                        sustain_frames = max(1, int(0.5 * 22050 / hop_len))
+                        for i in range(rms_head.size):
+                            if rms_head[i] >= threshold:
+                                window = rms_head[i : i + sustain_frames]
+                                if window.size and float(np.mean(window)) >= threshold:
+                                    intro_sec = round(max(0.0, float(times[i])), 1)
+                                    break
+
+            # 2. Decode middle slice for BPM (if not in ID3) and overall energy density
+            cmd_mid = [
                 "ffmpeg", "-v", "error",
                 "-ss", str(offset),
                 "-t", str(target_slice_duration),
@@ -160,32 +205,52 @@ class LibraryIndexer:
                 "-ar", "22050",
                 "-"
             ]
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True
-            )
-            if not result.stdout or len(result.stdout) < 22050 * 4:
-                logger.warning("Decoded slice for %s is empty or too short. Returning fallback default BPM.", file_path.name)
-                return 120, "fallback_default"
+            res_mid = subprocess.run(cmd_mid, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res_mid.stdout and len(res_mid.stdout) >= 22050 * 4:
+                y_mid = np.frombuffer(res_mid.stdout, dtype=np.float32)
 
-            y = np.frombuffer(result.stdout, dtype=np.float32)
-            tempo, _ = librosa.beat.beat_track(y=y, sr=22050, start_bpm=128.0)
+                # Compute BPM with librosa if not present in ID3
+                if id3_bpm is None or id3_bpm <= 0:
+                    tempo, _ = librosa.beat.beat_track(y=y_mid, sr=22050, start_bpm=128.0)
+                    if hasattr(tempo, "__iter__"):
+                        computed = float(tempo[0])
+                    else:
+                        computed = float(tempo)
+                    computed_bpm = int(round(computed))
+                    if computed_bpm > 0:
+                        bpm = max(60, min(computed_bpm, 220))
+                        bpm_source = "librosa_analysis"
 
-            if hasattr(tempo, "__iter__"):
-                computed = float(tempo[0])
-            else:
-                computed = float(tempo)
+                # Compute RMS energy density
+                rms_mid = float(np.sqrt(np.mean(y_mid ** 2)))
+                # Energy classification combining tempo & sonic density
+                if bpm >= 155 or (bpm >= 140 and rms_mid >= 0.12):
+                    energy = "max"
+                elif bpm >= 130 or rms_mid >= 0.08:
+                    energy = "high"
+                elif bpm >= 115 or rms_mid >= 0.04:
+                    energy = "medium"
+                else:
+                    energy = "low"
 
-            bpm = int(round(computed))
-            return max(60, min(bpm, 220)), "librosa_analysis"
-        except ImportError as ie:
-            logger.info("librosa not installed (%s). Using fallback 120 BPM.", ie)
-            return 120, "fallback_default"
         except Exception as e:
-            logger.warning("librosa BPM analysis failed for %s: %s. Using fallback default 120 BPM.", file_path.name, e)
-            return 120, "fallback_default"
+            logger.debug("Audio analysis fallback on %s: %s", file_path.name, e)
+            if id3_bpm and id3_bpm > 0:
+                bpm = id3_bpm
+                bpm_source = "id3"
+            else:
+                bpm = 120
+                bpm_source = "fallback_default"
+            if bpm >= 155:
+                energy = "max"
+            elif bpm >= 135:
+                energy = "high"
+            elif bpm >= 118:
+                energy = "medium"
+            else:
+                energy = "low"
+
+        return bpm, bpm_source, energy, intro_sec
 
     def scan_library(self, force_rescan: bool = False) -> List[TrackMetadata]:
         """
@@ -241,10 +306,7 @@ class LibraryIndexer:
 
                     logger.info("Indexing track: %s (%.1fs)", file_path.name, duration)
 
-                    if bpm is not None and bpm > 0:
-                        bpm_source = "id3"
-                    else:
-                        bpm, bpm_source = self._compute_fallback_bpm(file_path, duration)
+                    bpm, bpm_source, energy, intro_sec = self._analyze_audio_properties(file_path, duration, id3_bpm=bpm)
 
                     track = TrackMetadata(
                         path=path_str,
@@ -254,6 +316,8 @@ class LibraryIndexer:
                         duration_sec=duration,
                         bpm=bpm,
                         bpm_source=bpm_source,
+                        energy=energy,
+                        intro_sec=intro_sec,
                         mtime=mtime
                     )
                     self._tracks[path_str] = track
@@ -305,68 +369,73 @@ class LibraryIndexer:
                 return False
             return True
 
+        energy_rank = {"low": 1, "medium": 2, "high": 3, "max": 4}
+
         for segment in segments:
             min_bpm, max_bpm = segment.target_bpm_range
             target_duration = segment.duration_sec
+            seg_intensity = segment.intensity.lower()
+            target_energy_level = energy_rank.get(seg_intensity, 2)
+            target_mid = (min_bpm + max_bpm) / 2
+
             segment_accumulated_sec = 0.0
             segment_tracks: List[Path] = []
 
-            # 1. Strict match: tracks in [min_bpm, max_bpm]
-            candidates = [
-                t for t in all_tracks
-                if is_available(t) and min_bpm <= t.bpm <= max_bpm
-            ]
+            def score_track(t: TrackMetadata) -> float:
+                # 1. Energy compatibility score (0.0 to 1.0)
+                t_energy_level = energy_rank.get(t.energy.lower(), 2)
+                diff = abs(target_energy_level - t_energy_level)
+                energy_score = max(0.1, 1.0 - diff * 0.3)
 
-            # 2. Tolerance match (±5%)
-            if not candidates:
-                tol_min = int(min_bpm * 0.95)
-                tol_max = int(max_bpm * 1.05)
-                candidates = [
-                    t for t in all_tracks
-                    if is_available(t) and tol_min <= t.bpm <= tol_max
-                ]
+                # 2. BPM proximity score (0.0 to 1.0)
+                if min_bpm <= t.bpm <= max_bpm:
+                    bpm_score = 1.0
+                elif min_bpm <= t.bpm * 2 <= max_bpm or min_bpm <= t.bpm / 2 <= max_bpm:
+                    bpm_score = 0.9  # half/double time harmonic compatibility
+                else:
+                    tol_min = int(min_bpm * 0.92)
+                    tol_max = int(max_bpm * 1.08)
+                    if tol_min <= t.bpm <= tol_max:
+                        bpm_score = 0.75
+                    else:
+                        bpm_score = max(0.1, 1.0 - abs(t.bpm - target_mid) / 50.0)
 
-            # 3. Half-time or double-time match (e.g. 160 BPM track for 80 BPM target)
-            if not candidates:
-                candidates = [
-                    t for t in all_tracks
-                    if is_available(t) and (
-                        min_bpm <= t.bpm * 2 <= max_bpm or
-                        min_bpm <= t.bpm / 2 <= max_bpm
-                    )
-                ]
+                # 3. Drop advantage for high intensity
+                drop_score = 0.0
+                if seg_intensity in ("high", "max") and t.intro_sec > 0:
+                    drop_score = 0.1
 
-            # 4. Fallback: closest available unused track
-            if not candidates:
-                unused = [t for t in all_tracks if is_available(t)]
-                target_mid = (min_bpm + max_bpm) / 2
-                candidates = sorted(
-                    unused if unused else all_tracks,
-                    key=lambda t: abs(t.bpm - target_mid)
-                )
+                return energy_score * 0.5 + bpm_score * 0.4 + drop_score
 
-            # Sort candidate tracks by duration descending to minimize splices
-            candidates.sort(key=lambda t: t.duration_sec, reverse=True)
+            # 1. Available tracks matching target criteria
+            available = [t for t in all_tracks if is_available(t)]
+            if not available:
+                available = list(all_tracks)
+
+            candidates = sorted(
+                available,
+                key=lambda t: (score_track(t), t.duration_sec),
+                reverse=True
+            )
 
             for track in candidates:
                 segment_tracks.append(Path(track.path))
                 used_paths.add(track.path)
                 used_song_keys.add((track.title.strip().lower(), track.artist.strip().lower()))
-                # First track gives full duration; subsequent tracks lose 3.0s in acrossfade
-                effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
+                # First track gives full duration; subsequent tracks lose 4.0s in acrossfade
+                effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 4.0)
                 segment_accumulated_sec += effective_duration
                 if segment_accumulated_sec >= target_duration:
                     break
 
             # If segment still needs audio coverage, repeat tracks from pool until target_duration is covered
             if segment_accumulated_sec < target_duration and all_tracks:
-                target_mid = (min_bpm + max_bpm) / 2
-                pool = sorted(all_tracks, key=lambda t: abs(t.bpm - target_mid))
+                pool = sorted(all_tracks, key=lambda t: score_track(t), reverse=True)
                 pool_idx = 0
                 while segment_accumulated_sec < target_duration and pool:
                     track = pool[pool_idx % len(pool)]
                     segment_tracks.append(Path(track.path))
-                    effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
+                    effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 4.0)
                     segment_accumulated_sec += effective_duration
                     pool_idx += 1
 

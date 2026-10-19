@@ -103,101 +103,73 @@ class AudioMixer:
         if not normalized_segments:
             raise AudioMixerError("No valid tracks provided in segment_tracks.")
 
-        # Expand normalized segments: ensure tracks cover seg_dur
-        expanded_segments: List[Tuple[int, List[Path]]] = []
-        for seg_dur, tracks in normalized_segments:
-            current_tracks = list(tracks)
-            # Check effective duration and repeat tracks if shorter than seg_dur
-            seg_total = 0.0
-            track_durations = []
-            for p in current_tracks:
-                try:
-                    d = self.get_audio_duration_sec(p)
-                except Exception:
-                    d = 180.0
-                track_durations.append(d)
-                eff = d if len(track_durations) == 1 else max(0.0, d - 3.0)
-                seg_total += eff
+        target_total_sec = total_duration_sec or sum(dur for dur, _ in normalized_segments)
 
-            if seg_total < seg_dur and current_tracks:
-                idx = 0
-                original_len = len(current_tracks)
-                while seg_total < seg_dur and len(current_tracks) < 50:
-                    t = current_tracks[idx % original_len]
-                    d = track_durations[idx % original_len]
-                    current_tracks.append(t)
-                    eff = max(0.0, d - 3.0)
-                    seg_total += eff
-                    idx += 1
-            expanded_segments.append((seg_dur, current_tracks))
-
-        normalized_segments = expanded_segments
-
-        # Allocate a dedicated -i input for EVERY track occurrence (no deduplication, avoiding stream reuse crash)
-        input_files: List[Path] = []
-        segment_stream_indices: List[Tuple[int, List[int]]] = []
-        for seg_dur, tracks in normalized_segments:
-            seg_indices: List[int] = []
+        # Collect ordered tracks across all segments
+        raw_tracks: List[Path] = []
+        for _, tracks in normalized_segments:
             for p in tracks:
-                if not p.exists():
-                    raise AudioMixerError(f"Music track not found: {p}")
-                in_idx = len(input_files)
-                input_files.append(p)
-                seg_indices.append(in_idx)
-            segment_stream_indices.append((seg_dur, seg_indices))
+                raw_tracks.append(p)
+
+        if not raw_tracks:
+            raise AudioMixerError("No valid audio tracks available to construct music bed.")
+
+        # Measure audio duration per track
+        track_durations: List[float] = []
+        for p in raw_tracks:
+            try:
+                d = self.get_audio_duration_sec(p)
+            except Exception:
+                d = 180.0
+            track_durations.append(d)
+
+        # Ensure cumulative duration covers target_total_sec (accounting for 4.0s acrossfade per transition)
+        active_tracks: List[Path] = list(raw_tracks)
+        cum_dur = track_durations[0] if track_durations else 180.0
+        for d in track_durations[1:]:
+            cum_dur += max(0.0, d - 4.0)
+
+        # If library tracks are shorter than total workout duration, cycle tracks
+        if cum_dur < target_total_sec:
+            orig_len = len(raw_tracks)
+            idx = 0
+            while cum_dur < target_total_sec + 20.0 and len(active_tracks) < 60:
+                p = raw_tracks[idx % orig_len]
+                d = track_durations[idx % orig_len]
+                active_tracks.append(p)
+                cum_dur += max(0.0, d - 4.0)
+                idx += 1
 
         cmd = ["ffmpeg", "-y"]
-        for p in input_files:
+        for p in active_tracks:
+            if not p.exists():
+                raise AudioMixerError(f"Music track not found: {p}")
             cmd.extend(["-i", str(p)])
 
         filter_parts: List[str] = []
-        num_segments = len(segment_stream_indices)
-        segment_output_tags: List[str] = []
+        n_tracks = len(active_tracks)
 
-        for s_idx, (seg_dur, stream_indices) in enumerate(segment_stream_indices):
-            seg_tag = f"seg{s_idx}"
-            fade_dur = min(3.0, float(seg_dur) / 2.0)
-            fade_out_st = max(0.0, float(seg_dur) - fade_dur)
-            fade_filter = f"afade=t=in:st=0:d={fade_dur}:curve=hsin,afade=t=out:st={fade_out_st}:d={fade_dur}:curve=hsin"
+        for i in range(n_tracks):
+            filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[t{i}]")
 
-            if len(stream_indices) == 1:
-                in_idx = stream_indices[0]
-                filter_parts.append(
-                    f"[{in_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,"
-                    f"apad,atrim=0:{seg_dur},{fade_filter}[{seg_tag}]"
-                )
-            else:
-                # Format each track occurrence in this segment
-                for t_idx, in_idx in enumerate(stream_indices):
-                    filter_parts.append(
-                        f"[{in_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[s{s_idx}_t{t_idx}]"
-                    )
-
-                # Chain crossfades inside this segment
-                current_tag = f"s{s_idx}_t0"
-                for t_idx in range(1, len(stream_indices)):
-                    next_tag = f"s{s_idx}_t{t_idx}"
-                    out_tag = f"s{s_idx}_m{t_idx}"
-                    filter_parts.append(
-                        f"[{current_tag}][{next_tag}]acrossfade=d=3:c1=tri:c2=tri[{out_tag}]"
-                    )
-                    current_tag = out_tag
-
-                # Strictly trim to segment duration with apad guarantee and smooth segment boundary fades
-                filter_parts.append(
-                    f"[{current_tag}]apad,atrim=0:{seg_dur},{fade_filter}[{seg_tag}]"
-                )
-
-            segment_output_tags.append(f"[{seg_tag}]")
-
-        # Concatenate all segment sub-beds seamlessly
-        if num_segments == 1:
-            filter_parts.append(f"{segment_output_tags[0]}loudnorm=I=-16:TP=-1.5:LRA=11[out]")
+        if n_tracks == 1:
+            last_tag = "t0"
         else:
-            inputs_str = "".join(segment_output_tags)
-            filter_parts.append(
-                f"{inputs_str}concat=n={num_segments}:v=0:a=1,loudnorm=I=-16:TP=-1.5:LRA=11[out]"
-            )
+            curr_tag = "t0"
+            for i in range(1, n_tracks):
+                next_tag = f"t{i}"
+                out_tag = f"mix_{i}"
+                filter_parts.append(f"[{curr_tag}][{next_tag}]acrossfade=d=4:c1=tri:c2=tri[{out_tag}]")
+                curr_tag = out_tag
+            last_tag = curr_tag
+
+        fade_out_st = max(0.0, float(target_total_sec) - 4.0)
+        filter_parts.append(
+            f"[{last_tag}]apad,atrim=0:{target_total_sec},"
+            f"afade=t=in:st=0:d=2.0:curve=hsin,"
+            f"afade=t=out:st={fade_out_st}:d=4.0:curve=hsin,"
+            f"loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+        )
 
         filter_complex = ";".join(filter_parts)
         cmd.extend([
@@ -209,8 +181,9 @@ class AudioMixer:
             str(output_wav_path)
         ])
 
-        self._run_ffmpeg(cmd, desc="Segment-Aligned Music Bed Generation (Step A)")
+        self._run_ffmpeg(cmd, desc="Continuous DJ Music Bed Generation (Step A)")
         return output_wav_path
+
 
     def build_voice_timeline(
         self,
