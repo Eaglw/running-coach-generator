@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Running Coach Generator - Web Dashboard</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              accent: '#38bdf8'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.08); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="text-3xl">🏃</span>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            Running Coach Generator
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">v1.0 Ready</span>
+          </h1>
+          <p class="text-xs text-slate-400">AI Guided Workouts • Music Sync • Apple Podcasts RSS</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button onclick="copyFeedUrl()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+          <span id="copyBtnText">Copia URL Feed RSS</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="max-w-7xl mx-auto px-4 pt-6 w-full">
+    <div class="flex border-b border-slate-800 space-x-8 text-sm font-medium">
+      <button onclick="switchTab('tab-workout')" id="nav-workout" class="pb-3 text-emerald-400 border-b-2 border-emerald-400 flex items-center gap-2">
+        <span>⚡</span> Crea Workout
+      </button>
+      <button onclick="switchTab('tab-podcast')" id="nav-podcast" class="pb-3 text-slate-400 hover:text-slate-200 flex items-center gap-2">
+        <span>🎙️</span> Podcast & Episodi
+      </button>
+      <button onclick="switchTab('tab-library')" id="nav-library" class="pb-3 text-slate-400 hover:text-slate-200 flex items-center gap-2">
+        <span>🎵</span> Libreria Musicale
+      </button>
+      <button onclick="switchTab('tab-settings')" id="nav-settings" class="pb-3 text-slate-400 hover:text-slate-200 flex items-center gap-2">
+        <span>⚙️</span> Impostazioni
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <main class="max-w-7xl mx-auto px-4 py-6 w-full flex-1">
+
+    <!-- TAB 1: WORKOUT CREATOR -->
+    <section id="tab-workout" class="space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Input Form -->
+        <div class="lg:col-span-7 space-y-6">
+          <div class="glass-card rounded-2xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <span>✍️</span> Descrivi l'allenamento di oggi
+            </h2>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Prompt Vocale o Descrizione Libera</label>
+                <textarea id="promptInput" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition" placeholder="Es: Oggi 10 minuti di riscaldamento a 5:30/km, poi 20 minuti di ritmo medio a 4:40 e 5 minuti di defaticamento finale."></textarea>
+              </div>
+
+              <!-- Quick Presets -->
+              <div>
+                <span class="text-xs text-slate-400 font-medium">Oppure scegli un preset rapido:</span>
+                <div class="flex flex-wrap gap-2 mt-2">
+                  <button onclick="setPreset('45min-progressivo')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    🏃 45m Progressivo (10m lento + 25m medio + 10m defat.)
+                  </button>
+                  <button onclick="setPreset('30min-soglia')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    🔥 30m Tempo Run (8m lento + 18m soglia + 4m defat.)
+                  </button>
+                  <button onclick="setPreset('25min-rigenerante')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    🌿 25m Corsa Rigenerante Zona 2
+                  </button>
+                </div>
+              </div>
+
+              <!-- Coach Persona -->
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Persona del Running Coach</label>
+                <select id="coachPersona" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+                  <option value="tecnico_motivazionale">Tecnico Motivazionale (Professionale, ritmo, respirazione e postura)</option>
+                  <option value="calmo_mindful">Calmo Mindful (Rilassato, consapevole, ascolto del corpo)</option>
+                  <option value="militare_severo">Militare Severo (Disciplina, niente scuse, cadenza elevata)</option>
+                </select>
+              </div>
+
+              <!-- Submit Button -->
+              <button id="generateBtn" onclick="submitWorkoutPrompt()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 font-semibold text-white shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-[0.99]">
+                <span>🎧</span> Genera e Pubblica sul Podcast
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Live Job Status & Audio Player -->
+        <div class="lg:col-span-5 space-y-6">
+          <div class="glass-card rounded-2xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4 flex items-center justify-between">
+              <span class="flex items-center gap-2"><span>📡</span> Stato di Generazione</span>
+              <span id="jobBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400">In attesa</span>
+            </h2>
+
+            <!-- Progress Bar -->
+            <div class="space-y-2 mb-6">
+              <div class="flex justify-between text-xs text-slate-400">
+                <span id="statusMessage">Nessun job attivo</span>
+                <span id="progressPercent">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700/50">
+                <div id="progressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Job Steps Indicator -->
+            <div class="space-y-3 text-xs text-slate-400 border-t border-slate-800/80 pt-4">
+              <div id="step-script" class="flex items-center gap-2 text-slate-500">
+                <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                <span>1. Parsing LLM e stesura script vocale</span>
+              </div>
+              <div id="step-tts" class="flex items-center gap-2 text-slate-500">
+                <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                <span>2. Sintesi neurale TTS dei cue audio</span>
+              </div>
+              <div id="step-music" class="flex items-center gap-2 text-slate-500">
+                <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                <span>3. Matching BPM & crossfade musicale (Step A)</span>
+              </div>
+              <div id="step-mixing" class="flex items-center gap-2 text-slate-500">
+                <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                <span>4. FFmpeg Sidechain Ducking & Mixdown MP3 (Step B)</span>
+              </div>
+              <div id="step-rss" class="flex items-center gap-2 text-slate-500">
+                <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                <span>5. Pubblicazione RSS per Apple Watch</span>
+              </div>
+            </div>
+
+            <!-- Completed Player Box -->
+            <div id="completedBox" class="hidden mt-6 pt-4 border-t border-slate-800 space-y-3">
+              <div class="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl">
+                <p class="text-xs font-semibold text-emerald-400 mb-1">🎉 Episodio Pronto per la Corsa!</p>
+                <p id="completedTitle" class="text-sm font-bold text-white truncate"></p>
+                <audio id="audioPlayer" controls class="w-full mt-3 h-9"></audio>
+                <div class="mt-2 flex justify-end">
+                  <a id="downloadLink" href="#" download class="text-xs text-emerald-400 hover:text-emerald-300 underline font-medium">Scarica MP3</a>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: PODCAST FEED & EPISODES -->
+    <section id="tab-podcast" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6">
+        <h2 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+          <span>🎙️</span> Sincronizzazione Apple Podcasts / Apple Watch
+        </h2>
+        <p class="text-sm text-slate-400 mb-4">
+          Apple Podcasts supporta la riproduzione offline e lo streaming diretto su Apple Watch tramite Feed RSS privati.
+        </p>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">URL del tuo Podcast Feed</span>
+            <div class="text-sm font-mono text-emerald-400 break-all" id="feedUrlDisplay">http://localhost:8000/podcast/feed.xml</div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="copyFeedUrl()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition">
+              Copia Link
+            </button>
+            <a id="feedDirectLink" href="/podcast/feed.xml" target="_blank" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700 transition">
+              Apri XML
+            </a>
+          </div>
+        </div>
+
+        <div class="mt-4 p-3 bg-slate-900/50 rounded-xl border border-slate-800/80 text-xs text-slate-400">
+          💡 <strong class="text-slate-300">Come sincronizzare su Apple Watch:</strong> Apri l'app <em>Apple Podcasts</em> su iPhone ➔ Scheda <em>Libreria</em> ➔ Tocca i tre puntini (...) in alto a destra ➔ <em>"Segui uno spettacolo tramite URL..."</em> ➔ Incolla questo link. L'allenamento verrà sincronizzato automaticamente sul tuo Apple Watch per l'ascolto offline senza iPhone!
+        </div>
+      </div>
+
+      <!-- Episode List -->
+      <div class="glass-card rounded-2xl p-6">
+        <h3 class="text-md font-semibold text-white mb-4">Episodi Disponibili sul Feed</h3>
+        <div id="episodesList" class="space-y-3">
+          <div class="text-xs text-slate-500 py-4 text-center">Caricamento episodi...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MUSIC LIBRARY -->
+    <section id="tab-library" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+              <span>🎵</span> Libreria Musicale Locale
+            </h2>
+            <p class="text-xs text-slate-400">Tracce scansionate in <code class="text-emerald-400">/data/music</code> per il mixing a tempo.</p>
+          </div>
+          <button onclick="scanMusicLibrary()" id="rescanBtn" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-2 transition">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>Riscansiona Libreria</span>
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-900/60 uppercase font-semibold text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Titolo</th>
+                <th class="py-3 px-4">Artista</th>
+                <th class="py-3 px-4">BPM</th>
+                <th class="py-3 px-4">Durata</th>
+                <th class="py-3 px-4">Sorgente BPM</th>
+              </tr>
+            </thead>
+            <tbody id="libraryTableBody" class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td colspan="5" class="py-4 text-center text-slate-500 font-sans">Caricamento tracce musicali...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: SETTINGS -->
+    <section id="tab-settings" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6 max-w-2xl">
+        <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <span>⚙️</span> Configurazione di Sistema
+        </h2>
+        <div id="settingsDetails" class="space-y-3 text-xs">
+          <div class="text-slate-500">Caricamento impostazioni in corso...</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let activeJobId = null;
+    let pollInterval = null;
+
+    // Presets helper
+    function setPreset(type) {
+      const promptEl = document.getElementById('promptInput');
+      if (type === '45min-progressivo') {
+        promptEl.value = 'Riscaldamento 10 min a 5:30/km, fase centrale 25 min progressivi a ritmo medio 4:45/km, e 10 min defaticamento a 6:00/km.';
+      } else if (type === '30min-soglia') {
+        promptEl.value = '8 min corsa lenta a 5:30/km, blocco a soglia di 18 min a 4:30/km spinto, e defaticamento 4 min.';
+      } else if (type === '25min-rigenerante') {
+        promptEl.value = 'Corsa rigenerante continua da 25 minuti in Zona 2 con cadenza costante e musica rilassante.';
+      }
+    }
+
+    // Tab Navigation
+    function switchTab(tabId) {
+      ['tab-workout', 'tab-podcast', 'tab-library', 'tab-settings'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+      });
+      ['nav-workout', 'nav-podcast', 'nav-library', 'nav-settings'].forEach(id => {
+        const btn = document.getElementById(id);
+        btn.classList.remove('text-emerald-400', 'border-b-2', 'border-emerald-400');
+        btn.classList.add('text-slate-400');
+      });
+
+      document.getElementById(tabId).classList.remove('hidden');
+      const activeNav = document.getElementById(tabId.replace('tab-', 'nav-'));
+      activeNav.classList.remove('text-slate-400');
+      activeNav.classList.add('text-emerald-400', 'border-b-2', 'border-emerald-400');
+
+      if (tabId === 'tab-podcast') loadEpisodes();
+      if (tabId === 'tab-library') loadLibrary();
+      if (tabId === 'tab-settings') loadSettings();
+    }
+
+    // Submit Workout Prompt
+    async function submitWorkoutPrompt() {
+      const promptText = document.getElementById('promptInput').value.trim();
+      const persona = document.getElementById('coachPersona').value;
+
+      if (!promptText) {
+        alert('Inserisci una descrizione per il tuo allenamento!');
+        return;
+      }
+
+      const generateBtn = document.getElementById('generateBtn');
+      generateBtn.disabled = true;
+      generateBtn.innerHTML = '<span>⏳</span> Accodamento in corso...';
+
+      try {
+        const res = await fetch('/api/v1/workout/from-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptText, coach_persona: persona })
+        });
+        const data = await res.json();
+        activeJobId = data.job_id;
+        startJobPolling(activeJobId);
+      } catch (err) {
+        alert('Errore di connessione: ' + err);
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = '<span>🎧</span> Genera e Pubblica sul Podcast';
+      }
+    }
+
+    // Polling Job Status
+    function startJobPolling(jobId) {
+      if (pollInterval) clearInterval(pollInterval);
+      document.getElementById('completedBox').classList.add('hidden');
+
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/v1/jobs/${jobId}`);
+          if (!res.ok) return;
+          const job = await res.json();
+          updateJobUI(job);
+
+          if (job.status === 'completed' || job.status === 'failed') {
+            clearInterval(pollInterval);
+            document.getElementById('generateBtn').disabled = false;
+            document.getElementById('generateBtn').innerHTML = '<span>🎧</span> Genera e Pubblica sul Podcast';
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1500);
+    }
+
+    function updateJobUI(job) {
+      const badge = document.getElementById('jobBadge');
+      const msg = document.getElementById('statusMessage');
+      const bar = document.getElementById('progressBar');
+      const percent = document.getElementById('progressPercent');
+
+      badge.textContent = job.status.toUpperCase();
+      const pct = Math.round((job.progress || 0) * 100);
+      bar.style.width = pct + '%';
+      percent.textContent = pct + '%';
+
+      // Update step indicators
+      const steps = ['step-script', 'step-tts', 'step-music', 'step-mixing', 'step-rss'];
+      const activeIdx = {
+        'queued': 0,
+        'generating_script': 0,
+        'synthesizing_tts': 1,
+        'mixing_audio': 3,
+        'completed': 5,
+        'failed': 0
+      }[job.status] || 0;
+
+      steps.forEach((stepId, idx) => {
+        const el = document.getElementById(stepId);
+        if (idx < activeIdx || job.status === 'completed') {
+          el.className = 'flex items-center gap-2 text-emerald-400 font-medium';
+          el.querySelector('span').className = 'w-2 h-2 rounded-full bg-emerald-400';
+        } else if (idx === activeIdx) {
+          el.className = 'flex items-center gap-2 text-teal-300 font-semibold animate-pulse';
+          el.querySelector('span').className = 'w-2 h-2 rounded-full bg-teal-400';
+        } else {
+          el.className = 'flex items-center gap-2 text-slate-500';
+          el.querySelector('span').className = 'w-2 h-2 rounded-full bg-slate-600';
+        }
+      });
+
+      if (job.status === 'generating_script') {
+        msg.textContent = 'Parsing prompt e generazione script vocale...';
+      } else if (job.status === 'synthesizing_tts') {
+        msg.textContent = 'Sintesi vocale TTS in corso...';
+      } else if (job.status === 'mixing_audio') {
+        msg.textContent = 'FFmpeg: crossfade musicale & sidechain ducking...';
+      } else if (job.status === 'completed') {
+        msg.textContent = 'Allenamento completato!';
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+        if (job.episode_url) {
+          document.getElementById('completedBox').classList.remove('hidden');
+          document.getElementById('completedTitle').textContent = job.workout_title || 'Nuovo Episodio Workout';
+          const audio = document.getElementById('audioPlayer');
+          audio.src = job.episode_url;
+          document.getElementById('downloadLink').href = job.episode_url;
+        }
+      } else if (job.status === 'failed') {
+        msg.textContent = 'Errore: ' + (job.error || 'Generazione fallita');
+        badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
+      }
+    }
+
+    // Load Episodes
+    async function loadEpisodes() {
+      try {
+        const res = await fetch('/api/v1/episodes');
+        const list = await res.json();
+        const container = document.getElementById('episodesList');
+        if (!list || list.length === 0) {
+          container.innerHTML = '<div class="text-xs text-slate-500 py-4 text-center">Nessun episodio ancora pubblicato. Genera il tuo primo workout!</div>';
+          return;
+        }
+        container.innerHTML = list.map(ep => `
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div class="space-y-1">
+              <h4 class="text-sm font-semibold text-white">${ep.title}</h4>
+              <p class="text-xs text-slate-400">${ep.description}</p>
+              <div class="text-[11px] text-slate-500 flex gap-3">
+                <span>⏱️ ${Math.round(ep.duration_sec / 60)} min</span>
+                <span>📦 ${(ep.file_size_bytes / 1024 / 1024).toFixed(1)} MB</span>
+                <span>📅 ${new Date(ep.pub_date).toLocaleDateString()}</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <audio controls src="${ep.enclosure_url}" class="h-8 max-w-[200px]"></audio>
+              <a href="${ep.enclosure_url}" download class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium">⬇️</a>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Load Music Library
+    async function loadLibrary() {
+      try {
+        const res = await fetch('/api/v1/library/tracks');
+        const tracks = await res.json();
+        const tbody = document.getElementById('libraryTableBody');
+        if (!tracks || tracks.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans">Nessuna traccia trovata in /data/music. Aggiungi file MP3 o FLAC e premi "Riscansiona Libreria".</td></tr>';
+          return;
+        }
+        tbody.innerHTML = tracks.map(t => `
+          <tr class="hover:bg-slate-900/40">
+            <td class="py-2.5 px-4 font-sans font-medium text-white">${t.title}</td>
+            <td class="py-2.5 px-4 font-sans text-slate-400">${t.artist}</td>
+            <td class="py-2.5 px-4 font-bold text-emerald-400">${t.bpm}</td>
+            <td class="py-2.5 px-4 text-slate-400">${Math.floor(t.duration_sec / 60)}:${String(Math.floor(t.duration_sec % 60)).padStart(2, '0')}</td>
+            <td class="py-2.5 px-4">
+              <span class="text-[10px] px-2 py-0.5 rounded ${t.bpm_source === 'id3' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'}">
+                ${t.bpm_source}
+              </span>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function scanMusicLibrary() {
+      const btn = document.getElementById('rescanBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Scansione...';
+      try {
+        await fetch('/api/v1/library/scan', { method: 'POST' });
+        await loadLibrary();
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Riscansiona Libreria</span>';
+      }
+    }
+
+    // Load Settings
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/v1/settings');
+        const s = await res.json();
+        document.getElementById('settingsDetails').innerHTML = `
+          <div class="grid grid-cols-2 gap-2 bg-slate-900 p-4 rounded-xl border border-slate-800">
+            <span class="text-slate-400">BASE_URL:</span><span class="font-mono text-emerald-400">${s.BASE_URL}</span>
+            <span class="text-slate-400">LLM MODEL:</span><span class="font-mono text-white">${s.LLM_MODEL}</span>
+            <span class="text-slate-400">LLM BASE URL:</span><span class="font-mono text-slate-300 break-all">${s.LLM_BASE_URL}</span>
+            <span class="text-slate-400">TTS ENGINE:</span><span class="font-mono text-teal-400">${s.TTS_ENGINE}</span>
+            <span class="text-slate-400">TTS VOICE:</span><span class="font-mono text-slate-300">${s.TTS_VOICE}</span>
+            <span class="text-slate-400">MUSIC DIR:</span><span class="font-mono text-slate-300">${s.MUSIC_DIR}</span>
+            <span class="text-slate-400">PODCAST DIR:</span><span class="font-mono text-slate-300">${s.PODCAST_DIR}</span>
+          </div>
+        `;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Copy Feed URL helper
+    function copyFeedUrl() {
+      const url = `${window.location.origin}/podcast/feed.xml`;
+      navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('copyBtnText');
+        if (btn) {
+          btn.textContent = 'Copiato!';
+          setTimeout(() => btn.textContent = 'Copia URL Feed RSS', 2000);
+        }
+      });
+    }
+
+    // Update initial Feed URL display based on browser location
+    document.addEventListener('DOMContentLoaded', () => {
+      const feedDisplay = document.getElementById('feedUrlDisplay');
+      if (feedDisplay) feedDisplay.textContent = `${window.location.origin}/podcast/feed.xml`;
+    });
+  </script>
+</body>
+</html>
