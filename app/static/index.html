@@ -376,8 +376,11 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Base URL (Accessible by Apple Watch)</label>
-              <input type="text" id="cfgBaseUrl" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="http://192.168.1.100:8000">
+              <div class="flex justify-between items-center mb-1">
+                <label class="text-xs font-medium text-slate-400">Base URL (Local Network IP for iPhone)</label>
+                <button type="button" onclick="setLanBaseUrl()" class="text-[11px] text-emerald-400 hover:text-emerald-300 underline">Set 192.168.1.12:8000</button>
+              </div>
+              <input type="text" id="cfgBaseUrl" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="http://192.168.1.12:8000">
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Podcast Channel Title</label>
@@ -705,6 +708,11 @@
       if (input) input.value = 'C:\\Users\\eaglw\\Music';
     }
 
+    function setLanBaseUrl() {
+      const input = document.getElementById('cfgBaseUrl');
+      if (input) input.value = 'http://192.168.1.12:8000';
+    }
+
     async function loadSettings() {
       try {
         const res = await fetch('/api/v1/settings');
@@ -718,10 +726,14 @@
           onTtsEngineChanged();
           document.getElementById('cfgTtsVoice').value = s.TTS_VOICE || 'it_IT-riccardo-x_low';
         }
-        if (document.getElementById('cfgBaseUrl')) document.getElementById('cfgBaseUrl').value = s.BASE_URL || '';
+        if (document.getElementById('cfgBaseUrl')) document.getElementById('cfgBaseUrl').value = s.BASE_URL || 'http://192.168.1.12:8000';
         if (document.getElementById('cfgPodcastTitle')) document.getElementById('cfgPodcastTitle').value = s.PODCAST_TITLE || '';
         if (document.getElementById('cfgMusicDir')) document.getElementById('cfgMusicDir').value = s.MUSIC_DIR || '';
         if (document.getElementById('libraryPathDisplay')) document.getElementById('libraryPathDisplay').textContent = s.MUSIC_DIR || '/data/music';
+        if (document.getElementById('feedUrlDisplay')) {
+          const base = s.BASE_URL || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://192.168.1.12:8000' : window.location.origin);
+          document.getElementById('feedUrlDisplay').textContent = `${base.replace(/\/$/, '')}/podcast/feed.xml`;
+        }
       } catch (e) {
         console.error('Failed to load settings:', e);
       }
@@ -815,20 +827,20 @@
 
     // Copy Feed URL helper
     function copyFeedUrl() {
-      const url = `${window.location.origin}/podcast/feed.xml`;
+      const display = document.getElementById('feedUrlDisplay');
+      const url = display ? display.textContent.trim() : `${window.location.origin}/podcast/feed.xml`;
       navigator.clipboard.writeText(url).then(() => {
-        const btn = document.getElementById('copyBtnText');
-        if (btn) {
-          btn.textContent = 'Copied!';
-          setTimeout(() => btn.textContent = 'Copy RSS Feed URL', 2000);
-        }
+        alert('Podcast Feed URL copied to clipboard:\n' + url + '\n\nPaste this URL into Apple Podcasts on your iPhone (Follow a Show by URL).');
       });
     }
 
     // Update initial Feed URL display based on browser location
     document.addEventListener('DOMContentLoaded', () => {
       const feedDisplay = document.getElementById('feedUrlDisplay');
-      if (feedDisplay) feedDisplay.textContent = `${window.location.origin}/podcast/feed.xml`;
+      if (feedDisplay) {
+        const defaultBase = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://192.168.1.12:8000' : window.location.origin;
+        feedDisplay.textContent = `${defaultBase}/podcast/feed.xml`;
+      }
     });
   </script>
 </body>

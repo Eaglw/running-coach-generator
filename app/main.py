@@ -7,7 +7,7 @@ import subprocess
 from typing import Any, Dict, List, Optional
 import uuid
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -368,15 +368,28 @@ async def test_llm_connection():
     "/podcast/feed.xml",
     summary="Serve the Podcast 2.0 RSS Feed"
 )
-async def get_podcast_feed():
+async def get_podcast_feed(request: Request):
     """
-    Serves the static podcast feed.xml with Content-Type application/rss+xml.
-    Generates an initial feed if none exists.
+    Serves the podcast feed.xml with Content-Type application/rss+xml.
+    Dynamically adapts localhost URLs to the incoming Host header or settings.BASE_URL
+    so Apple Podcasts clients on mobile devices can download episodes seamlessly.
     """
     if not settings.RSS_FEED_PATH.exists():
         rss_generator.generate_feed([])
+    raw_xml = settings.RSS_FEED_PATH.read_text(encoding="utf-8")
+
+    # If accessed from an external IP/hostname, replace localhost with the actual host
+    host_header = request.headers.get("host")
+    if host_header:
+        scheme = request.url.scheme or "http"
+        request_base = f"{scheme}://{host_header}"
+        if "localhost" not in host_header and "127.0.0.1" not in host_header:
+            raw_xml = raw_xml.replace("http://localhost:8000", request_base).replace("http://127.0.0.1:8000", request_base)
+    elif settings.BASE_URL:
+        raw_xml = raw_xml.replace("http://localhost:8000", settings.BASE_URL).replace("http://127.0.0.1:8000", settings.BASE_URL)
+
     return Response(
-        content=settings.RSS_FEED_PATH.read_text(encoding="utf-8"),
+        content=raw_xml,
         media_type="application/rss+xml"
     )
 
