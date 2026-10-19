@@ -236,12 +236,13 @@ class LibraryIndexer:
     def select_tracks_for_segments(
         self,
         segments: List[Segment]
-    ) -> List[Path]:
+    ) -> List[Tuple[int, List[Path]]]:
         """
         Track selection algorithm:
         Picks tracks matching each segment's target_bpm_range (with ±5% tolerance or
         half/double-time fallback) to cover segment.duration_sec,
         strictly avoiding duplicate tracks in the same workout.
+        Returns a list of tuples: [(segment_duration_sec, [track_path_1, track_path_2, ...]), ...]
         """
         all_tracks = self.get_tracks()
         if not all_tracks:
@@ -250,13 +251,14 @@ class LibraryIndexer:
         if not all_tracks:
             raise ValueError(f"No music tracks found in {self.music_dir}. Please place MP3/FLAC files in the music folder.")
 
-        selected_paths: List[Path] = []
+        result: List[Tuple[int, List[Path]]] = []
         used_paths: Set[str] = set()
 
         for segment in segments:
             min_bpm, max_bpm = segment.target_bpm_range
             target_duration = segment.duration_sec
             segment_accumulated_sec = 0.0
+            segment_tracks: List[Path] = []
 
             # 1. Strict match: tracks in [min_bpm, max_bpm]
             candidates = [
@@ -296,9 +298,11 @@ class LibraryIndexer:
             candidates.sort(key=lambda t: t.duration_sec, reverse=True)
 
             for track in candidates:
-                selected_paths.append(Path(track.path))
+                segment_tracks.append(Path(track.path))
                 used_paths.add(track.path)
-                segment_accumulated_sec += track.duration_sec
+                # First track gives full duration; subsequent tracks lose 3.0s in acrossfade
+                effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
+                segment_accumulated_sec += effective_duration
                 if segment_accumulated_sec >= target_duration:
                     break
 
@@ -307,12 +311,15 @@ class LibraryIndexer:
                 target_mid = (min_bpm + max_bpm) / 2
                 pool = sorted(all_tracks, key=lambda t: abs(t.bpm - target_mid))
                 for track in pool:
-                    selected_paths.append(Path(track.path))
-                    segment_accumulated_sec += track.duration_sec
+                    segment_tracks.append(Path(track.path))
+                    effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
+                    segment_accumulated_sec += effective_duration
                     if segment_accumulated_sec >= target_duration:
                         break
 
-        return selected_paths
+            result.append((target_duration, segment_tracks))
+
+        return result
 
 
 # Singleton indexer instance

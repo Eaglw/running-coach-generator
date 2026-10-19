@@ -3,7 +3,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import uuid
 
 from app.config import settings
@@ -19,7 +19,8 @@ class AudioMixerError(Exception):
 class AudioMixer:
     """
     Two-step FFmpeg audio mixing engine:
-    1. Step A: Music bed concatenation with 3s crossfade, trimming, and EBU R128 loudnorm.
+    1. Step A: Segment-aligned music bed concatenation with 3s crossfade, per-segment trimming,
+       and EBU R128 loudnorm without large RAM buffers.
     2. Step B: Precision voice timeline assembly, sidechain compression ducking, and MP3 encoding.
     """
 
@@ -72,53 +73,97 @@ class AudioMixer:
 
     def generate_music_bed(
         self,
-        track_paths: List[Path],
-        target_duration_sec: int,
-        output_wav_path: Path
+        segment_tracks: Union[List[Tuple[int, List[Path]]], List[Path]],
+        output_wav_path: Path,
+        total_duration_sec: Optional[int] = None
     ) -> Path:
         """
-        Step A: Concatenate music tracks with 3-second crossfades and normalize loudness.
+        Step A: Builds a segment-aligned music bed.
+        Accepts either:
+          - A list of segments: [(segment_duration_sec, [track1, track2, ...]), ...]
+          - Or a flat list of tracks (with total_duration_sec) for simple single-segment mixdowns.
+        Trims each segment to its exact duration and concatenates them with zero RAM aloop buffers.
         """
-        if not track_paths:
-            raise AudioMixerError("Cannot generate music bed: track_paths is empty.")
+        # Normalize input to List[Tuple[int, List[Path]]]
+        if not segment_tracks:
+            raise AudioMixerError("Cannot generate music bed: segment_tracks is empty.")
 
-        for p in track_paths:
+        first_elem = segment_tracks[0]
+        if isinstance(first_elem, (Path, str)):
+            # Flat list passed
+            dur = total_duration_sec or 300
+            normalized_segments: List[Tuple[int, List[Path]]] = [(dur, [Path(p) for p in segment_tracks])]
+        else:
+            normalized_segments = [
+                (dur, [Path(p) for p in tracks])
+                for dur, tracks in segment_tracks  # type: ignore
+                if tracks
+            ]
+
+        if not normalized_segments:
+            raise AudioMixerError("No valid tracks provided in segment_tracks.")
+
+        # Collect unique input files preserving first-appearance order
+        unique_paths: List[Path] = []
+        path_to_idx = {}
+        for _, tracks in normalized_segments:
+            for p in tracks:
+                resolved = p.resolve()
+                if resolved not in path_to_idx:
+                    path_to_idx[resolved] = len(unique_paths)
+                    unique_paths.append(p)
+
+        for p in unique_paths:
             if not p.exists():
                 raise AudioMixerError(f"Music track not found: {p}")
 
-        num_tracks = len(track_paths)
         cmd = ["ffmpeg", "-y"]
-
-        for p in track_paths:
+        for p in unique_paths:
             cmd.extend(["-i", str(p)])
 
         filter_parts: List[str] = []
+        num_segments = len(normalized_segments)
+        segment_output_tags: List[str] = []
 
-        if num_tracks == 1:
-            # Single track: format and ensure duration
-            filter_parts.append(
-                f"[0:a]aformat=sample_rates=44100:channel_layouts=stereo,aloop=loop=-1:size=2e+09,"
-                f"atrim=0:{target_duration_sec},loudnorm=I=-16:TP=-1.5:LRA=11[out]"
-            )
-        else:
-            # Format all inputs to common sample rate and stereo layout
-            for i in range(num_tracks):
-                filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{i}]")
-
-            # Chain crossfades: acrossfade=d=3:c1=tri:c2=tri
-            current_tag = "a0"
-            for i in range(1, num_tracks):
-                next_tag = f"a{i}"
-                out_tag = f"m{i}"
+        for s_idx, (seg_dur, tracks) in enumerate(normalized_segments):
+            seg_tag = f"seg{s_idx}"
+            if len(tracks) == 1:
+                in_idx = path_to_idx[tracks[0].resolve()]
+                # Loop single track only if shorter than seg_dur using a tiny 10s buffer (size=44100*10)
                 filter_parts.append(
-                    f"[{current_tag}][{next_tag}]acrossfade=d=3:c1=tri:c2=tri[{out_tag}]"
+                    f"[{in_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,"
+                    f"aloop=loop=-1:size=44100*10,atrim=0:{seg_dur}[{seg_tag}]"
                 )
-                current_tag = out_tag
+            else:
+                # Format each track in this segment
+                for t_idx, t_path in enumerate(tracks):
+                    in_idx = path_to_idx[t_path.resolve()]
+                    filter_parts.append(
+                        f"[{in_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[s{s_idx}_t{t_idx}]"
+                    )
 
-            # Loop if necessary to cover target duration, trim, and apply EBU R128 loudnorm
+                # Chain crossfades inside this segment
+                current_tag = f"s{s_idx}_t0"
+                for t_idx in range(1, len(tracks)):
+                    next_tag = f"s{s_idx}_t{t_idx}"
+                    out_tag = f"s{s_idx}_m{t_idx}"
+                    filter_parts.append(
+                        f"[{current_tag}][{next_tag}]acrossfade=d=3:c1=tri:c2=tri[{out_tag}]"
+                    )
+                    current_tag = out_tag
+
+                # Strictly trim to segment duration
+                filter_parts.append(f"[{current_tag}]atrim=0:{seg_dur}[{seg_tag}]")
+
+            segment_output_tags.append(f"[{seg_tag}]")
+
+        # Concatenate all segment sub-beds seamlessly
+        if num_segments == 1:
+            filter_parts.append(f"{segment_output_tags[0]}loudnorm=I=-16:TP=-1.5:LRA=11[out]")
+        else:
+            inputs_str = "".join(segment_output_tags)
             filter_parts.append(
-                f"[{current_tag}]aloop=loop=-1:size=2e+09,atrim=0:{target_duration_sec},"
-                f"loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+                f"{inputs_str}concat=n={num_segments}:v=0:a=1,loudnorm=I=-16:TP=-1.5:LRA=11[out]"
             )
 
         filter_complex = ";".join(filter_parts)
@@ -131,7 +176,7 @@ class AudioMixer:
             str(output_wav_path)
         ])
 
-        self._run_ffmpeg(cmd, desc="Music Bed Generation (Step A)")
+        self._run_ffmpeg(cmd, desc="Segment-Aligned Music Bed Generation (Step A)")
         return output_wav_path
 
     def build_voice_timeline(
@@ -149,7 +194,7 @@ class AudioMixer:
             cmd = [
                 "ffmpeg", "-y",
                 "-f", "lavfi",
-                "-i", f"anullsrc=channel_layout=stereo:sample_rate=44100",
+                "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
                 "-t", str(total_duration_sec),
                 "-c:a", "pcm_s16le",
                 str(output_wav_path)
@@ -236,7 +281,7 @@ class AudioMixer:
 
     def render_workout_audio(
         self,
-        track_paths: List[Path],
+        segment_tracks: Union[List[Tuple[int, List[Path]]], List[Path]],
         voice_cues: List[Tuple[Path, int]],
         total_duration_sec: int,
         output_filename: str
@@ -254,8 +299,8 @@ class AudioMixer:
         final_mp3_path = self.episodes_dir / output_filename
 
         try:
-            logger.info("Generating music bed (%d seconds)...", total_duration_sec)
-            self.generate_music_bed(track_paths, total_duration_sec, music_bed_path)
+            logger.info("Generating segment-aligned music bed (%d seconds)...", total_duration_sec)
+            self.generate_music_bed(segment_tracks, music_bed_path, total_duration_sec=total_duration_sec)
 
             logger.info("Assembling voice cues timeline (%d cues)...", len(voice_cues))
             self.build_voice_timeline(voice_cues, total_duration_sec, voice_track_path)
@@ -274,7 +319,7 @@ def run_mock_test() -> bool:
     """
     Standalone verification CLI test:
     Generates 2 synthetic MP3 music files and 1 synthetic WAV voice cue,
-    runs the two-step FFmpeg ducking pipeline, and checks the generated MP3.
+    runs the two-step FFmpeg ducking pipeline with 2 distinct segments, and checks the generated MP3.
     """
     print("\n--- Running AudioMixer Standalone Verification Test ---")
     test_temp = settings.TEMP_DIR / "cli_test"
@@ -309,10 +354,16 @@ def run_mock_test() -> bool:
 
         mixer = AudioMixer(temp_dir=test_temp, episodes_dir=test_temp)
 
-        # Test Step A + Step B orchestration for an 8-second total workout, voice starting at 2000ms
-        print("Executing AudioMixer pipeline (target duration: 8 seconds, voice offset: 2000ms)...")
+        # Test Step A + Step B orchestration:
+        # Segment 1: 5 seconds with music1
+        # Segment 2: 3 seconds with music2
+        # Total workout = 8 seconds, voice starting at 2000ms
+        print("Executing AudioMixer pipeline (Segment 1: 5s, Segment 2: 3s, voice offset: 2000ms)...")
         result_path = mixer.render_workout_audio(
-            track_paths=[music1, music2],
+            segment_tracks=[
+                (5, [music1]),
+                (3, [music2])
+            ],
             voice_cues=[(voice1, 2000)],
             total_duration_sec=8,
             output_filename=output_mp3.name

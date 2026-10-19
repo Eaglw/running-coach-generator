@@ -40,13 +40,18 @@ rss_generator = RSSGenerator()
 async def lifespan(app: FastAPI):
     """Lifecycle startup and shutdown hooks."""
     settings.ensure_directories()
-    logger.info("Initializing music library index...")
-    try:
-        library_indexer.scan_library()
-    except Exception as e:
-        logger.warning("Initial music library scan failed: %s", e)
     # Ensure initial feed.xml exists
-    rss_generator.generate_feed()
+    if not settings.RSS_FEED_PATH.exists():
+        rss_generator.generate_feed([])
+
+    # Trigger initial non-forced scan if library cache is empty
+    if not library_indexer.get_tracks():
+        logger.info("Initializing music library index on startup...")
+        try:
+            library_indexer.scan_library(force_rescan=False)
+        except Exception as e:
+            logger.warning("Initial music library scan failed: %s", e)
+
     yield
     logger.info("Application shutting down.")
 
@@ -58,7 +63,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for local dashboards or integrations
+# Enable CORS for local dashboards or external clients
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,11 +76,11 @@ app.add_middleware(
 def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
     """
     Asynchronous pipeline orchestrating:
-    1. LLM Cue Script generation
-    2. TTS voice cue synthesis
-    3. Music selection & BPM matching
-    4. FFmpeg Step A (Music bed) & Step B (Ducking & MP3 Mix)
-    5. Apple Podcasts RSS feed publication
+    1. LLM Cue Script generation (generating_script)
+    2. TTS voice cue synthesis (synthesizing_tts)
+    3. Music selection & BPM matching (mixing_audio)
+    4. FFmpeg Step A (Segment-aligned Music bed) & Step B (Ducking & MP3 Mix)
+    5. Apple Podcasts RSS feed publication (rss_generator.add_episode -> completed)
     """
     job = jobs_db.get(job_id)
     if not job:
@@ -117,17 +122,16 @@ def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
 
             current_segment_start_sec += segment.duration_sec
 
-        # Phase 3: Track Selection from Library
+        # Phase 3: Track Selection per Segment
         job.status = JobStatus.MIXING_AUDIO
         job.progress = 0.60
         job.updated_at = datetime.now(timezone.utc)
         logger.info("[Job %s] Selecting music tracks for segments...", job_id)
 
         try:
-            track_paths = library_indexer.select_tracks_for_segments(workout_with_scripts.segments)
+            segment_tracks = library_indexer.select_tracks_for_segments(workout_with_scripts.segments)
         except Exception as e:
             logger.warning("[Job %s] Music selection fallback: %s. Generating ambient bed.", job_id, e)
-            # Create synthetic backing music track if no music is in /data/music
             fallback_music = session_temp_dir / "fallback_bed.mp3"
             subprocess.run([
                 "ffmpeg", "-y", "-f", "lavfi",
@@ -135,7 +139,7 @@ def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
                 "-af", "volume=0.2",
                 "-c:a", "libmp3lame", "-b:a", "192k", str(fallback_music)
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            track_paths = [fallback_music]
+            segment_tracks = [(workout_with_scripts.total_duration_sec, [fallback_music])]
 
         # Phase 4: FFmpeg Mixing (Step A & Step B)
         job.progress = 0.80
@@ -144,7 +148,7 @@ def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
         logger.info("[Job %s] Rendering final audio track with FFmpeg ducking...", job_id)
 
         final_mp3_path = audio_mixer.render_workout_audio(
-            track_paths=track_paths,
+            segment_tracks=segment_tracks,
             voice_cues=voice_cues,
             total_duration_sec=workout_with_scripts.total_duration_sec,
             output_filename=output_filename
@@ -189,6 +193,15 @@ def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
 # =====================================================================
 # API Endpoints
 # =====================================================================
+
+@app.get(
+    "/health",
+    summary="Health check endpoint"
+)
+async def health():
+    """Healthcheck endpoint returning {'status': 'ok'}."""
+    return {"status": "ok"}
+
 
 @app.post(
     "/api/v1/workout/from-json",
@@ -244,7 +257,7 @@ async def create_workout_from_text(
 )
 async def get_job_status(job_id: str):
     """
-    Returns the status (queued, generating_script, synthesizing_tts, mixing_audio, completed, failed)
+    Returns the current status (queued, generating_script, synthesizing_tts, mixing_audio, completed, failed)
     and progress of a generation job.
     """
     job = jobs_db.get(job_id)
@@ -260,9 +273,10 @@ async def get_job_status(job_id: str):
 async def scan_library(force: bool = False):
     """
     Scans /data/music, extracts ID3 tags, and runs librosa fallback BPM detection.
+    Returns the count and list of indexed tracks.
     """
     tracks = library_indexer.scan_library(force_rescan=force)
-    return {"message": f"Successfully indexed {len(tracks)} tracks.", "count": len(tracks)}
+    return {"count": len(tracks), "tracks": tracks}
 
 
 @app.get(
@@ -310,6 +324,7 @@ async def get_active_settings():
 async def get_podcast_feed():
     """
     Serves the static podcast feed.xml with Content-Type application/rss+xml.
+    Generates an initial feed if none exists.
     """
     if not settings.RSS_FEED_PATH.exists():
         rss_generator.generate_feed([])
@@ -319,23 +334,16 @@ async def get_podcast_feed():
     )
 
 
-@app.get(
-    "/health",
-    summary="Health check endpoint"
-)
-async def health():
-    return {"status": "healthy", "service": "running-coach-generator"}
-
-
 # =====================================================================
 # Static File Mounts (Apple Watch Byte-Serving & Web GUI)
 # =====================================================================
 
-# Serve static podcast episodes (/podcast/episodes/<filename>.mp3) with mandatory HTTP Range support
+# Mount /podcast using FastAPI StaticFiles with mandatory HTTP Range support
+# This automatically serves /podcast/episodes/*.mp3 with byte-serving for Apple Watch
 app.mount(
-    "/podcast/episodes",
-    StaticFiles(directory=str(settings.EPISODES_DIR)),
-    name="podcast_episodes"
+    "/podcast",
+    StaticFiles(directory=str(settings.PODCAST_DIR)),
+    name="podcast_static"
 )
 
 # Serve Web GUI static assets
