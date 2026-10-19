@@ -412,6 +412,7 @@
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">TTS Engine</label>
               <select id="cfgTtsEngine" onchange="onTtsEngineChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                <option value="edge-tts" selected>Edge TTS (Microsoft Neural AI - Recommended)</option>
                 <option value="piper">Piper TTS (Fast Local Neural ONNX)</option>
                 <option value="kokoro">Kokoro TTS (Neural Multilingual v1.0)</option>
                 <option value="fallback">System Fallback (espeak-ng)</option>
@@ -420,9 +421,22 @@
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Voice Identifier</label>
               <select id="cfgTtsVoice" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
-                <option value="it_IT-riccardo-x_low">Riccardo (Male, Fast Neural) - it_IT-riccardo-x_low</option>
-                <option value="it_IT-paola-medium">Paola (Female, Natural) - it_IT-paola-medium</option>
+                <option value="it-IT-DiegoNeural">Diego (Male, Energetic Coach) - it-IT-DiegoNeural</option>
+                <option value="it-IT-ElsaNeural">Elsa (Female, Crisp Coach) - it-IT-ElsaNeural</option>
+                <option value="it-IT-IsabellaNeural">Isabella (Female, Warm Coach) - it-IT-IsabellaNeural</option>
+                <option value="it-IT-GiuseppeNeural">Giuseppe (Male, Clear Coach) - it-IT-GiuseppeNeural</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Test TTS Button & Response Box -->
+          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-1">
+            <button type="button" onclick="testTtsVoice()" id="testTtsBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-emerald-400 rounded-xl flex items-center gap-2 transition">
+              <span>🔊</span> Test Voice TTS
+            </button>
+            <div id="ttsTestResult" class="hidden text-xs px-3 py-1.5 rounded-lg flex items-center gap-3">
+              <audio id="ttsAudioPreview" controls class="h-8 max-w-xs"></audio>
+              <span id="ttsEngineBadge" class="px-2 py-0.5 rounded text-[11px] font-mono"></span>
             </div>
           </div>
         </div>
@@ -947,7 +961,22 @@
       const voiceSelect = document.getElementById('cfgTtsVoice');
       voiceSelect.innerHTML = '';
 
-      if (engine === 'piper') {
+      if (engine === 'edge-tts') {
+        if (lang === 'en') {
+          voiceSelect.innerHTML = `
+            <option value="en-US-ChristopherNeural">Christopher (Male, Energetic Coach) - en-US-ChristopherNeural</option>
+            <option value="en-US-JennyNeural">Jenny (Female, Crisp Coach) - en-US-JennyNeural</option>
+            <option value="en-US-GuyNeural">Guy (Male, Natural Coach) - en-US-GuyNeural</option>
+          `;
+        } else {
+          voiceSelect.innerHTML = `
+            <option value="it-IT-DiegoNeural" selected>Diego (Male, Energetic Coach) - it-IT-DiegoNeural</option>
+            <option value="it-IT-ElsaNeural">Elsa (Female, Crisp Coach) - it-IT-ElsaNeural</option>
+            <option value="it-IT-IsabellaNeural">Isabella (Female, Warm Coach) - it-IT-IsabellaNeural</option>
+            <option value="it-IT-GiuseppeNeural">Giuseppe (Male, Clear Coach) - it-IT-GiuseppeNeural</option>
+          `;
+        }
+      } else if (engine === 'piper') {
         if (lang === 'en') {
           voiceSelect.innerHTML = `
             <option value="en_US-lessac-medium">Lessac (Female, Natural Studio) - en_US-lessac-medium</option>
@@ -955,8 +984,8 @@
           `;
         } else {
           voiceSelect.innerHTML = `
+            <option value="it_IT-paola-medium" selected>Paola (Female, Natural) - it_IT-paola-medium</option>
             <option value="it_IT-riccardo-x_low">Riccardo (Male, Fast Neural) - it_IT-riccardo-x_low</option>
-            <option value="it_IT-paola-medium">Paola (Female, Natural) - it_IT-paola-medium</option>
           `;
         }
       } else if (engine === 'kokoro') {
@@ -976,6 +1005,52 @@
         voiceSelect.innerHTML = `
           <option value="fallback">System Voice (espeak-ng / synth)</option>
         `;
+      }
+    }
+
+    async function testTtsVoice() {
+      const btn = document.getElementById('testTtsBtn');
+      const box = document.getElementById('ttsTestResult');
+      const audio = document.getElementById('ttsAudioPreview');
+      const badge = document.getElementById('ttsEngineBadge');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Synthesizing voice...';
+      box.classList.add('hidden');
+
+      const payload = {
+        engine: document.getElementById('cfgTtsEngine').value,
+        voice: document.getElementById('cfgTtsVoice').value,
+        language: document.getElementById('cfgWorkoutLanguage').value
+      };
+
+      try {
+        const res = await fetch('/api/v1/settings/test-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          box.classList.remove('hidden', 'bg-rose-950/40', 'border-rose-800', 'text-rose-300');
+          box.classList.add('bg-slate-900', 'border', 'border-slate-700');
+          audio.src = data.audio_url + '?t=' + Date.now();
+          audio.play().catch(() => {});
+          badge.textContent = `Generated by: ${data.engine_class} (${data.voice})`;
+          badge.className = 'px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-950/60 text-emerald-400 border border-emerald-500/30';
+        } else {
+          box.classList.remove('hidden', 'bg-slate-900', 'border-slate-700');
+          box.classList.add('bg-rose-950/40', 'border', 'border-rose-800', 'text-rose-300');
+          badge.textContent = 'Error: ' + (data.detail || 'Synthesis failed');
+          badge.className = 'px-2 py-0.5 rounded text-[11px] font-mono bg-rose-950 text-rose-300';
+        }
+      } catch (err) {
+        box.classList.remove('hidden', 'bg-slate-900', 'border-slate-700');
+        box.classList.add('bg-rose-950/40', 'border', 'border-rose-800', 'text-rose-300');
+        badge.textContent = 'Connection error: ' + err;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔊</span> Test Voice TTS';
       }
     }
 
@@ -1004,7 +1079,7 @@
           document.getElementById('workoutLanguage').value = s.WORKOUT_LANGUAGE || 'it';
         }
         if (document.getElementById('cfgTtsEngine')) {
-          document.getElementById('cfgTtsEngine').value = s.TTS_ENGINE || 'piper';
+          document.getElementById('cfgTtsEngine').value = s.TTS_ENGINE || 'edge-tts';
           onTtsEngineChanged();
           if (document.getElementById('cfgTtsVoice') && s.TTS_VOICE) {
             document.getElementById('cfgTtsVoice').value = s.TTS_VOICE;

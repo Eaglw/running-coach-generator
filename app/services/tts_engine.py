@@ -29,6 +29,80 @@ class BaseTTSEngine(ABC):
         """
         pass
 
+    def _generate_silence(self, output_wav_path: Path, duration_sec: float = 0.5) -> Path:
+        """Helper to generate a brief silent WAV file."""
+        cmd = [
+            "ffmpeg", "-y", "-v", "error",
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-t", str(duration_sec),
+            "-c:a", "pcm_s16le",
+            str(output_wav_path)
+        ]
+        subprocess.run(cmd, check=True)
+        return output_wav_path
+
+
+class EdgeTTSEngine(BaseTTSEngine):
+    """
+    Microsoft Edge Neural TTS integration.
+    Produces studio-quality human-like speech with zero local weights required.
+    Supported Italian neural voices:
+      - it-IT-DiegoNeural (Male, energetic and natural running coach - DEFAULT)
+      - it-IT-ElsaNeural (Female, crisp & motivating)
+      - it-IT-IsabellaNeural (Female, warm)
+      - it-IT-GiuseppeNeural (Male)
+    """
+
+    def __init__(self, voice_name: Optional[str] = None) -> None:
+        self.voice_name = voice_name or settings.TTS_VOICE or "it-IT-DiegoNeural"
+        if not self.voice_name or "Neural" not in self.voice_name:
+            self.voice_name = "it-IT-DiegoNeural"
+
+    def synthesize(self, text: str, output_wav_path: Path) -> Path:
+        output_wav_path.parent.mkdir(parents=True, exist_ok=True)
+        if not text.strip():
+            self._generate_silence(output_wav_path)
+            return output_wav_path
+
+        tmp_mp3 = output_wav_path.with_suffix(".edge.mp3")
+        try:
+            import asyncio
+            import edge_tts
+
+            async def _run_edge():
+                communicate = edge_tts.Communicate(text, voice=self.voice_name, rate="+5%")
+                await communicate.save(str(tmp_mp3))
+
+            try:
+                asyncio.run(_run_edge())
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    loop.run_until_complete(_run_edge())
+                else:
+                    loop.run_until_complete(_run_edge())
+
+            if tmp_mp3.exists() and tmp_mp3.stat().st_size > 100:
+                subprocess.run([
+                    "ffmpeg", "-y", "-v", "error",
+                    "-i", str(tmp_mp3),
+                    "-ar", "44100", "-ac", "2",
+                    str(output_wav_path)
+                ], check=True)
+                if tmp_mp3.exists():
+                    tmp_mp3.unlink()
+                return output_wav_path
+
+            raise TTSEngineError(f"Edge TTS produced empty output: {tmp_mp3}")
+        except Exception as e:
+            logger.error("EdgeTTSEngine failed on voice '%s': %s", self.voice_name, e, exc_info=True)
+            if tmp_mp3.exists():
+                tmp_mp3.unlink()
+            logger.info("Falling back from EdgeTTSEngine to PiperTTSEngine (it_IT-paola-medium)...")
+            return PiperTTSEngine(voice_name="it_IT-paola-medium").synthesize(text, output_wav_path)
+
 
 class PiperTTSEngine(BaseTTSEngine):
     """
@@ -39,7 +113,7 @@ class PiperTTSEngine(BaseTTSEngine):
     _loaded_voice_cache: Dict[str, Any] = {}
 
     def __init__(self, voice_name: Optional[str] = None) -> None:
-        self.voice_name = voice_name or settings.TTS_VOICE
+        self.voice_name = voice_name or ("it_IT-paola-medium" if "Neural" in settings.TTS_VOICE else settings.TTS_VOICE)
         self.piper_bin = shutil.which("piper") or shutil.which("piper.exe")
 
     def _ensure_voice_model(self) -> Optional[Path]:
@@ -114,7 +188,7 @@ class PiperTTSEngine(BaseTTSEngine):
                 if output_wav_path.exists() and output_wav_path.stat().st_size > 100:
                     return output_wav_path
         except Exception as e:
-            logger.debug("Python piper module direct invocation: %s", e)
+            logger.warning("Python piper module direct invocation: %s", e)
 
         # 2. Try piper CLI binary
         if self.piper_bin and model_path and model_path.exists():
@@ -134,17 +208,11 @@ class PiperTTSEngine(BaseTTSEngine):
                 if output_wav_path.exists() and output_wav_path.stat().st_size > 100:
                     return output_wav_path
             except Exception as e:
-                logger.warning("Piper CLI execution failed: %s. Using system fallback.", e)
+                logger.error("Piper CLI execution failed: %s", e, exc_info=True)
 
+        logger.error("PiperTTSEngine failed on voice '%s'. Falling back to SystemFallbackTTSEngine.", self.voice_name)
         # 3. Fallback to system voice if neural model/binary is unavailable
         return SystemFallbackTTSEngine().synthesize(text, output_wav_path)
-
-    def _generate_silence(self, output_wav_path: Path) -> None:
-        subprocess.run([
-            "ffmpeg", "-y", "-f", "lavfi",
-            "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
-            "-t", "1.0", "-c:a", "pcm_s16le", str(output_wav_path)
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class KokoroTTSEngine(BaseTTSEngine):
@@ -227,10 +295,10 @@ class KokoroTTSEngine(BaseTTSEngine):
                 sf.write(str(output_wav_path), samples, sample_rate)
                 return output_wav_path
         except Exception as e:
-            logger.warning("Kokoro ONNX synthesis failed (%s). Falling back to Piper neural voice.", e)
+            logger.error("Kokoro ONNX synthesis failed: %s. Falling back to EdgeTTSEngine.", e, exc_info=True)
 
-        # If Kokoro models fail, fallback to Piper neural voice
-        return PiperTTSEngine(voice_name=self.voice_name if "it_IT" in self.voice_name else None).synthesize(text, output_wav_path)
+        # If Kokoro models fail, fallback to Edge neural voice
+        return EdgeTTSEngine(voice_name="it-IT-DiegoNeural" if "it" in self.voice_name else "en-US-ChristopherNeural").synthesize(text, output_wav_path)
 
 
 class SystemFallbackTTSEngine(BaseTTSEngine):
@@ -306,18 +374,22 @@ def get_tts_engine(
     selected_engine = (engine_name or settings.TTS_ENGINE).lower().strip()
     target_lang = (language or settings.WORKOUT_LANGUAGE or "it").lower().strip()
 
-    if selected_engine == "kokoro":
-        if not voice_name:
+    if selected_engine in ["edge-tts", "edge", "edgetts"]:
+        if not voice_name or "Neural" not in voice_name:
+            voice_name = "it-IT-DiegoNeural" if target_lang == "it" else "en-US-ChristopherNeural"
+        return EdgeTTSEngine(voice_name=voice_name)
+    elif selected_engine == "piper":
+        if not voice_name or "Neural" in voice_name:
+            voice_name = "it_IT-paola-medium" if target_lang == "it" else "en_US-lessac-medium"
+        return PiperTTSEngine(voice_name=voice_name)
+    elif selected_engine == "kokoro":
+        if not voice_name or "Neural" in voice_name:
             voice_name = "im_nicola" if target_lang == "it" else "af_heart"
         return KokoroTTSEngine(voice_name=voice_name)
-    elif selected_engine == "piper":
-        if not voice_name:
-            voice_name = "it_IT-riccardo-x_low" if target_lang == "it" else "en_US-lessac-medium"
-        return PiperTTSEngine(voice_name=voice_name)
     elif selected_engine == "fallback":
         return SystemFallbackTTSEngine()
     else:
-        logger.warning("Unknown TTS engine '%s'. Defaulting to Piper.", selected_engine)
-        if not voice_name:
-            voice_name = "it_IT-riccardo-x_low" if target_lang == "it" else "en_US-lessac-medium"
-        return PiperTTSEngine(voice_name=voice_name)
+        logger.warning("Unknown TTS engine '%s'. Defaulting to EdgeTTSEngine.", selected_engine)
+        if not voice_name or "Neural" not in voice_name:
+            voice_name = "it-IT-DiegoNeural" if target_lang == "it" else "en-US-ChristopherNeural"
+        return EdgeTTSEngine(voice_name=voice_name)

@@ -19,14 +19,15 @@ Your job is to convert a natural language workout description into a strict, val
 
 CRITICAL REQUIREMENTS:
 1. Language: Strictly NATURAL MOTIVATING ENGLISH for `workout_title`, `segment.name`, `intent`, and `spoken_text`.
-2. REPETITIONS & INTERVALS RULE:
-   When the user asks for repetitions (e.g. "10x 1 min fast and 1 min recovery", "8x 30s sprint and 30s easy", or "5x 2 minutes hard and 1 minute jog"):
+2. REPETITIONS & INTERVALS RULE (CRITICAL FOR MUSIC TIMING):
+   CRITICAL: Every single pace or intensity change (including every individual work interval and recovery interval in a repeat/fartlek workout) MUST be its own separate `Segment` object in the `segments` array so that the music engine switches tracks and BPM on every interval!
+   When the user asks for repetitions (e.g. "5x 2 min fast with 1 min recovery", "10x 1 min fast and 1 min recovery", "8x 30s sprint and 30s easy", or "5x 2 minutes hard and 1 minute jog"):
    You MUST explicitly expand each repetition into separate alternating segments in the "segments" list:
-   - "Interval 1/10 (Fast)" (e.g. duration_sec: 60, intensity: "high", target_bpm_range: [160, 180], target_pace: "4:00/km")
-   - "Recovery 1/10 (Easy)" (e.g. duration_sec: 60, intensity: "low", target_bpm_range: [120, 135], target_pace: "5:45/km")
-   - "Interval 2/10 (Fast)"...
-   - "Recovery 2/10 (Easy)"...
-   Do NOT combine intervals into a single generic block! Each fast burst and recovery burst must be its own segment.
+   - "Interval 1/5 (Fast)" (e.g. duration_sec: 120, intensity: "high", target_bpm_range: [160, 180], target_pace: "4:00/km")
+   - "Recovery 1/5 (Easy)" (e.g. duration_sec: 60, intensity: "low", target_bpm_range: [120, 135], target_pace: "5:45/km")
+   - "Interval 2/5 (Fast)"...
+   - "Recovery 2/5 (Easy)"...
+   Do NOT combine intervals into a single generic block! Every individual repetition and recovery interval MUST be its own independent segment.
 
 Expected JSON structure:
 {
@@ -105,16 +106,17 @@ Your job is to convert a natural language workout description into a strict, val
 
 REQUISITI FONDAMENTALI:
 1. Lingua: Strettamente ITALIANO NATURALE E MOTIVAZIONALE per `workout_title`, `segment.name`, `intent` e `spoken_text` (i modelli vocali Piper e Kokoro sono esclusivamente in italiano).
-2. REGOLA RIPETUTE E INTERVAL TRAINING:
-   Se l'utente richiede ripetute o intervalli (es. "10 volte un minuto forte e un minuto lento", "10x 1 min forte e 1 min piano", "5x 2 minuti forte e 1 recupero", "8x 30s scatto e 30s piano"):
+2. REGOLA RIPETUTE E INTERVAL TRAINING (FONDAMENTALE PER IL CAMBIO MUSICA):
+   CRITICO: Ogni singola variazione di ritmo o intensità (incluso ogni singolo scatto/ripetuta e ogni singolo intervallo di recupero) DEVE ESSERE un oggetto `Segment` separato e indipendente nell'array `segments`! Questo è indispensabile affinché il motore musicale cambi brano e BPM ad ogni intervallo.
+   Se l'utente richiede ripetute o intervalli (es. "5x 2 minuti forte e 1 recupero", "10 volte un minuto forte e un minuto lento", "10x 1 min forte e 1 min piano", "8x 30s scatto e 30s piano"):
    DEVI generare esplicitamente OGNI SINGOLA ripetuta e recupero come segmenti alternati e separati nell'array "segments":
    - "Riscaldamento Iniziale" (es. duration_sec: 600, intensity: "low")
-   - "Ripetuta 1/10 (Forte)" (es. duration_sec: 60, intensity: "high", target_bpm_range: [160, 180], target_pace: "4:00/km")
-   - "Recupero 1/10 (Piano)" (es. duration_sec: 60, intensity: "low", target_bpm_range: [120, 135], target_pace: "5:45/km")
-   - "Ripetuta 2/10 (Forte)"...
-   - "Recupero 2/10 (Piano)"...
+   - "Ripetuta 1/5 (Forte)" (es. duration_sec: 120, intensity: "high", target_bpm_range: [160, 180], target_pace: "4:00/km")
+   - "Recupero 1/5 (Piano)" (es. duration_sec: 60, intensity: "low", target_bpm_range: [120, 135], target_pace: "5:45/km")
+   - "Ripetuta 2/5 (Forte)"...
+   - "Recupero 2/5 (Piano)"...
    fino al termine di tutte le ripetute, seguito dal Defaticamento Finale!
-   NON raggruppare MAI le ripetute in un unico blocco generico! Ogni variazione deve essere un segmento indipendente.
+   NON raggruppare MAI le ripetute in un unico blocco generico! Ogni scatto e ogni recupero deve avere il suo Segment dedicato.
 
 Struttura JSON attesa:
 {
@@ -563,26 +565,35 @@ class LLMCoach:
         unit_pat = r"(?:minuti|minuto|min|m|secondi|secondo|sec|s)"
 
         # Check for repetition / interval patterns:
-        # Pattern A: "10x 1 min forte e 1 min lento" / "10 volte 1 min forte e 1 min piano"
+        # Pattern A: "5x 2 min fast with 1 min recovery" / "10x 1 min forte e 1 min piano" / "8x 30s sprint and 30s easy"
         match_a = re.search(
-            rf"(?:ripetute\s*)?({num_pat})\s*(?:x|\*|volte|ripetute(?:\s*da)?)\s*({num_pat})\s*({unit_pat})\s*(?:forte|veloce|scatto|sprint|hard|fast)\s*(?:e|,)?\s*({num_pat})\s*({unit_pat})\s*(?:piano|lento|recupero|facile|blando|easy|jog|slow)",
+            rf"(?:ripetute|intervals|reps?)?\s*({num_pat})\s*(?:x|\*|volte|ripetute(?:\s*da)?|reps?(?:\s*of)?)\s*({num_pat})\s*({unit_pat})\s*(?:forte|veloce|scatto|sprint|hard|fast)?\s*(?:e|,|con|with|and)?\s*(?:(?:con|di)?\s*)?({num_pat})\s*({unit_pat})\s*(?:piano|lento|recupero|recovery|facile|blando|easy|jog|slow)",
             prompt_lower
         )
         # Pattern B: "1 minuto forte e 1 minuto piano per 10 volte"
         match_b = re.search(
-            rf"({num_pat})\s*({unit_pat})\s*(?:forte|veloce|scatto|sprint|hard|fast)\s*(?:e|,)?\s*({num_pat})\s*({unit_pat})\s*(?:piano|lento|recupero|facile|blando|easy|jog|slow)\s*(?:per|\*|x)\s*({num_pat})\s*(?:volte)?",
+            rf"({num_pat})\s*({unit_pat})\s*(?:forte|veloce|scatto|sprint|hard|fast)\s*(?:e|,|con|with|and)?\s*(?:(?:con|di)?\s*)?({num_pat})\s*({unit_pat})\s*(?:piano|lento|recupero|recovery|facile|blando|easy|jog|slow)\s*(?:per|\*|x)\s*({num_pat})\s*(?:volte|reps)?",
             prompt_lower
         )
+        # Pattern C: Generic repeat e.g. "5x 2 min" or "5x2m" or "5 ripetute da 2 min"
+        match_c = re.search(
+            rf"(?:ripetute\s*da\s*|reps?\s*of\s*)?({num_pat})\s*(?:x|\*|volte|ripetute(?:\s*da)?)\s*({num_pat})\s*({unit_pat})",
+            prompt_lower
+        ) if not (match_a or match_b) and any(k in prompt_lower for k in ["x", "*", "ripetut", "interval", "rep"]) else None
 
-        if match_a or match_b:
+        if match_a or match_b or match_c:
             if match_a:
                 reps = to_num(match_a.group(1))
                 fast_dur = to_sec(match_a.group(2), match_a.group(3))
                 slow_dur = to_sec(match_a.group(4), match_a.group(5))
-            else:
+            elif match_b:
                 fast_dur = to_sec(match_b.group(1), match_b.group(2))
                 slow_dur = to_sec(match_b.group(3), match_b.group(4))
                 reps = to_num(match_b.group(5))
+            else:
+                reps = to_num(match_c.group(1))
+                fast_dur = to_sec(match_c.group(2), match_c.group(3))
+                slow_dur = max(60, int(fast_dur * 0.5))
 
             reps = max(2, min(reps, 30))
 

@@ -466,6 +466,16 @@ class LibraryIndexer:
                 return False
             return True
 
+        import random
+        # Sort library by BPM to compute percentiles for fallback when library has narrow BPM range
+        bpm_sorted = sorted(all_tracks, key=lambda t: t.bpm)
+        n_tracks = len(bpm_sorted)
+        p35_idx = int(n_tracks * 0.35)
+        p75_idx = int(n_tracks * 0.75)
+        bottom_35_pct = bpm_sorted[:max(1, p35_idx)]
+        middle_pct = bpm_sorted[p35_idx:max(p35_idx + 1, p75_idx)]
+        top_25_pct = bpm_sorted[max(0, p75_idx):]
+
         energy_rank = {"low": 1, "medium": 2, "high": 3, "max": 4}
         prev_track: Optional[TrackMetadata] = None
         recent_artists: List[str] = []
@@ -479,6 +489,25 @@ class LibraryIndexer:
 
             segment_accumulated_sec = 0.0
             segment_tracks: List[Path] = []
+
+            # Check if strict / tolerance BPM matching returns fewer than 3 tracks
+            exact_matches = [
+                t for t in all_tracks
+                if (min_bpm <= t.bpm <= max_bpm or min_bpm <= t.bpm * 2 <= max_bpm or min_bpm <= t.bpm / 2 <= max_bpm)
+            ]
+            use_percentiles = len(exact_matches) < 3
+
+            # Determine base pool based on percentile mapping if few matches exist
+            if use_percentiles:
+                if seg_intensity == "low":
+                    base_pool = bottom_35_pct
+                elif seg_intensity == "medium":
+                    base_pool = middle_pct
+                else:
+                    # high or max: top 25% highest BPM or double-time 70-88 BPM
+                    base_pool = [t for t in all_tracks if t in top_25_pct or (70 <= t.bpm <= 88)]
+            else:
+                base_pool = all_tracks
 
             def score_track(t: TrackMetadata) -> float:
                 # 1. Energy compatibility score (0.0 to 1.0)
@@ -517,16 +546,24 @@ class LibraryIndexer:
                 )
 
             # 1. Available tracks matching target criteria
-            available = [t for t in all_tracks if is_available(t)]
+            available = [t for t in base_pool if is_available(t)]
             if not available:
-                # If exhausted, allow reusing tracks from outside the immediately previous segment
+                # If exhausted in base_pool, expand to all available tracks
+                available = [t for t in all_tracks if is_available(t)]
+            if not available:
                 available = list(all_tracks)
 
-            candidates = sorted(
-                available,
-                key=lambda t: (score_track(t), t.duration_sec),
-                reverse=True
-            )
+            # Score candidates and pick with random shuffle among top tier (avoid deterministic longest-track bias)
+            scored = [(t, score_track(t)) for t in available]
+            scored.sort(key=lambda x: x[1], reverse=True)
+
+            top_score = scored[0][1] if scored else 1.0
+            top_tier = [t for t, s in scored if s >= (top_score - 0.18)]
+            if len(top_tier) < 4:
+                top_tier = [t for t, _ in scored[:6]]
+            random.shuffle(top_tier)
+
+            candidates = top_tier + [t for t, _ in scored if t not in top_tier]
 
             for track in candidates:
                 segment_tracks.append(Path(track.path))

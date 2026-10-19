@@ -53,8 +53,8 @@ class Settings(BaseSettings):
     LLM_MODEL: str = Field(default="gemini-2.5-flash", description="Model name to use for cue script generation")
 
     # TTS Settings
-    TTS_ENGINE: str = Field(default="piper", description="TTS engine to use: 'piper' or 'kokoro'")
-    TTS_VOICE: str = Field(default="it_IT-riccardo-x_low", description="Voice identifier for TTS")
+    TTS_ENGINE: str = Field(default="edge-tts", description="TTS engine to use: 'edge-tts', 'piper', or 'kokoro'")
+    TTS_VOICE: str = Field(default="it-IT-DiegoNeural", description="Voice identifier for TTS")
     WORKOUT_LANGUAGE: str = Field(default="it", description="Coaching speech language: 'it' or 'en'")
 
     @property

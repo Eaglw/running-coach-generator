@@ -105,18 +105,18 @@ class AudioMixer:
 
         target_total_sec = total_duration_sec or sum(dur for dur, _ in normalized_segments)
 
-        # Collect ordered tracks across all segments
-        raw_tracks: List[Path] = []
-        for _, tracks in normalized_segments:
+        # Collect ordered tracks across all segments along with their segment duration
+        track_entries: List[Tuple[Path, int]] = []
+        for seg_dur, tracks in normalized_segments:
             for p in tracks:
-                raw_tracks.append(p)
+                track_entries.append((p, seg_dur))
 
-        if not raw_tracks:
+        if not track_entries:
             raise AudioMixerError("No valid audio tracks available to construct music bed.")
 
         # Measure audio duration per track
         track_durations: List[float] = []
-        for p in raw_tracks:
+        for p, _ in track_entries:
             try:
                 d = self.get_audio_duration_sec(p)
             except Exception:
@@ -124,33 +124,46 @@ class AudioMixer:
             track_durations.append(d)
 
         # Ensure cumulative duration covers target_total_sec (accounting for 4.0s acrossfade per transition)
-        active_tracks: List[Path] = list(raw_tracks)
+        active_entries: List[Tuple[Path, int, float]] = [
+            (p, seg_dur, d) for (p, seg_dur), d in zip(track_entries, track_durations)
+        ]
         cum_dur = track_durations[0] if track_durations else 180.0
         for d in track_durations[1:]:
             cum_dur += max(0.0, d - 4.0)
 
         # If library tracks are shorter than total workout duration, cycle tracks
         if cum_dur < target_total_sec:
-            orig_len = len(raw_tracks)
+            orig_len = len(track_entries)
             idx = 0
-            while cum_dur < target_total_sec + 20.0 and len(active_tracks) < 60:
-                p = raw_tracks[idx % orig_len]
+            while cum_dur < target_total_sec + 20.0 and len(active_entries) < 60:
+                p, seg_dur = track_entries[idx % orig_len]
                 d = track_durations[idx % orig_len]
-                active_tracks.append(p)
+                active_entries.append((p, seg_dur, d))
                 cum_dur += max(0.0, d - 4.0)
                 idx += 1
 
         cmd = ["ffmpeg", "-y"]
-        for p in active_tracks:
+        for p, _, _ in active_entries:
             if not p.exists():
                 raise AudioMixerError(f"Music track not found: {p}")
             cmd.extend(["-i", str(p)])
 
         filter_parts: List[str] = []
-        n_tracks = len(active_tracks)
+        n_tracks = len(active_entries)
 
-        for i in range(n_tracks):
-            filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[t{i}]")
+        for i, (p, seg_dur, d) in enumerate(active_entries):
+            # Problem B Fix (Drop-Seeking): If track duration is > seg_dur + 45s and seg_dur <= 180s,
+            # skip the slow beatless intro so the runner immediately hears the drop/chorus!
+            if d > (seg_dur + 45.0) and seg_dur <= 180:
+                start_sec = 35.0
+                trim_dur = seg_dur + 10.0
+                filter_parts.append(
+                    f"[{i}:a]atrim=start={start_sec}:duration={trim_dur},"
+                    f"asetpts=PTS-STARTPTS,"
+                    f"aformat=sample_rates=44100:channel_layouts=stereo[t{i}]"
+                )
+            else:
+                filter_parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo[t{i}]")
 
         if n_tracks == 1:
             last_tag = "t0"

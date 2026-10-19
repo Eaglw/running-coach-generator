@@ -434,8 +434,59 @@ async def get_podcast_feed(request: Request):
     )
 
 
+@app.post(
+    "/api/v1/settings/test-tts",
+    summary="Test current or specified TTS voice and engine"
+)
+async def test_tts_voice(payload: Dict[str, Any] = None):
+    """
+    Synthesize a quick test audio sample to evaluate voice quality directly in the browser.
+    """
+    payload = payload or {}
+    engine_name = payload.get("engine") or settings.TTS_ENGINE
+    voice_name = payload.get("voice") or settings.TTS_VOICE
+    language = payload.get("language") or settings.WORKOUT_LANGUAGE
+
+    phrase = (
+        "Ciao runner! Questo è il tuo coach vocale di RunPodcast. Ottimo ritmo, continua così e ascolta la musica!"
+        if language == "it"
+        else "Hello runner! This is your RunPodcast audio coach. Great rhythm, keep it up and enjoy the music!"
+    )
+
+    settings.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    out_wav = settings.TEMP_DIR / f"test_tts_{uuid.uuid4().hex[:8]}.wav"
+    out_mp3 = out_wav.with_suffix(".mp3")
+
+    try:
+        engine = get_tts_engine(engine_name, voice_name=voice_name, language=language)
+        engine.synthesize(phrase, out_wav)
+
+        subprocess.run([
+            "ffmpeg", "-y", "-i", str(out_wav),
+            "-c:a", "libmp3lame", "-b:a", "128k",
+            str(out_mp3)
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        if out_wav.exists():
+            out_wav.unlink(missing_ok=True)
+
+        return {
+            "status": "ok",
+            "engine": engine_name,
+            "engine_class": engine.__class__.__name__,
+            "voice": engine.voice_name,
+            "audio_url": f"/data/temp/{out_mp3.name}"
+        }
+    except Exception as e:
+        logger.error("Test TTS failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"TTS synthesis test failed: {str(e)}"
+        )
+
+
 # =====================================================================
-# Static File Mounts (Apple Watch Byte-Serving & Web GUI)
+# Static File Mounts (Apple Watch Byte-Serving, Temp & Web GUI)
 # =====================================================================
 
 # Mount /podcast using FastAPI StaticFiles with mandatory HTTP Range support
@@ -444,6 +495,14 @@ app.mount(
     "/podcast",
     StaticFiles(directory=str(settings.PODCAST_DIR)),
     name="podcast_static"
+)
+
+# Mount /data/temp for temporary preview files
+settings.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/data/temp",
+    StaticFiles(directory=str(settings.TEMP_DIR)),
+    name="temp_static"
 )
 
 # Serve Web GUI static assets
