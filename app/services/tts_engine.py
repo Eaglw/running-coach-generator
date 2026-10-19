@@ -177,9 +177,10 @@ class KokoroTTSEngine(BaseTTSEngine):
                 sf.write(str(output_wav_path), samples, sample_rate)
                 return output_wav_path
         except Exception as e:
-            logger.debug("Kokoro ONNX execution: %s", e)
+            logger.debug("Kokoro ONNX not available (%s). Falling back to Piper neural voice.", e)
 
-        return SystemFallbackTTSEngine().synthesize(text, output_wav_path)
+        # If Kokoro models are not installed locally, fallback to Piper neural voice
+        return PiperTTSEngine().synthesize(text, output_wav_path)
 
 
 class SystemFallbackTTSEngine(BaseTTSEngine):
