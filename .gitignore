@@ -47,6 +47,8 @@ data/cache/*
 !data/cache/.gitkeep
 data/podcasts/episodes/*
 !data/podcasts/episodes/.gitkeep
+data/podcasts/*.xml
+data/podcasts/*.json
 data/temp/*
 !data/temp/.gitkeep
 
