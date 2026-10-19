@@ -299,6 +299,7 @@
                 <th class="py-3 px-4">Title</th>
                 <th class="py-3 px-4">Artist</th>
                 <th class="py-3 px-4">BPM</th>
+                <th class="py-3 px-4">Key</th>
                 <th class="py-3 px-4">Energy</th>
                 <th class="py-3 px-4">Drop / Intro</th>
                 <th class="py-3 px-4">Duration</th>
@@ -307,7 +308,7 @@
             </thead>
             <tbody id="libraryTableBody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="7" class="py-4 text-center text-slate-500 font-sans">Loading music tracks...</td>
+                <td colspan="8" class="py-4 text-center text-slate-500 font-sans">Loading music tracks...</td>
               </tr>
             </tbody>
           </table>
@@ -851,6 +852,11 @@
             <td class="py-2.5 px-4 font-sans font-medium text-white">${t.title}</td>
             <td class="py-2.5 px-4 font-sans text-slate-400">${t.artist}</td>
             <td class="py-2.5 px-4 font-bold text-emerald-400">${t.bpm}</td>
+            <td class="py-2.5 px-4">
+              <span class="text-[11px] px-2 py-0.5 rounded border font-mono font-semibold bg-indigo-500/10 text-indigo-300 border-indigo-500/20">
+                ${t.key || '8B'}
+              </span>
+            </td>
             <td class="py-2.5 px-4">
               <span class="text-[10px] px-2 py-0.5 rounded border uppercase font-sans font-semibold ${eBadge}">
                 ${t.energy || 'medium'}

@@ -32,9 +32,89 @@ class TrackMetadata(BaseModel):
     duration_sec: float
     bpm: int
     bpm_source: str  # "id3" or "librosa_analysis"
+    key: str = "8B"  # Camelot harmonic key code (e.g. 8A, 11B)
     energy: str = "medium"  # "low", "medium", "high", "max"
     intro_sec: float = 0.0  # seconds before main beat / drop kicks in
     mtime: float
+
+
+# --- SUB/WAVE Harmonic Mixing & Camelot Wheel Engine ---
+MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+MAJOR_CAMELOT = ["8B", "3B", "10B", "5B", "12B", "7B", "2B", "9B", "4B", "11B", "6B", "1B"]
+MINOR_CAMELOT = ["5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A"]
+
+
+def _pearson(a: List[float], b: List[float]) -> float:
+    n = len(a)
+    if n == 0:
+        return 0.0
+    ma = sum(a) / n
+    mb = sum(b) / n
+    num = sum((a[i] - ma) * (b[i] - mb) for i in range(n))
+    da = math.sqrt(sum((a[i] - ma) ** 2 for i in range(n)))
+    db = math.sqrt(sum((b[i] - mb) ** 2 for i in range(n)))
+    if da == 0 or db == 0:
+        return 0.0
+    return num / (da * db)
+
+
+def estimate_camelot_key(chroma_mean: List[float]) -> str:
+    """Estimates musical key using Krumhansl-Schmuckler profiles and returns Camelot code."""
+    scores = []
+    for tonic in range(12):
+        rotated = [chroma_mean[(tonic + i) % 12] for i in range(12)]
+        scores.append((_pearson(MAJOR_PROFILE, rotated), MAJOR_CAMELOT[tonic]))
+        scores.append((_pearson(MINOR_PROFILE, rotated), MINOR_CAMELOT[tonic]))
+    scores.sort(reverse=True, key=lambda s: s[0])
+    return scores[0][1]
+
+
+def bpm_compat(a: Optional[float], b: Optional[float]) -> float:
+    """
+    Tempo compatibility (0.0 to 1.0) with octave safe folding (70 ≈ 140 BPM).
+    Derived from SUB/WAVE controller/src/music/mix.ts.
+    """
+    if not a or not b or a <= 0 or b <= 0:
+        return 0.5
+    candidates = [b, b * 2, b / 2]
+    best_diff = min(abs(a - c) / a for c in candidates)
+    return max(0.0, 1.0 - best_diff / 0.10)
+
+
+def key_compat(k1: Optional[str], k2: Optional[str]) -> float:
+    """
+    Harmonic compatibility (0.0 to 1.0) on the Camelot wheel.
+    Derived from SUB/WAVE controller/src/music/mix.ts.
+    """
+    if not k1 or not k2:
+        return 0.5
+    k1, k2 = k1.strip().upper(), k2.strip().upper()
+    if k1 == k2:
+        return 1.0
+    try:
+        num1, let1 = int(k1[:-1]), k1[-1]
+        num2, let2 = int(k2[:-1]), k2[-1]
+    except Exception:
+        return 0.5
+
+    # Relative major/minor (e.g. 8A <-> 8B)
+    if num1 == num2 and let1 != let2:
+        return 0.9
+
+    # Adjacent on wheel in same mode (e.g. 8A <-> 7A or 9A)
+    diff = abs(num1 - num2)
+    if diff == 11:
+        diff = 1  # 12 is adjacent to 1 on Camelot circle
+    if let1 == let2 and diff == 1:
+        return 0.8
+
+    # Energy boost / modulation (+2 on wheel)
+    if diff == 2:
+        return 0.6
+
+    return 0.2
 
 
 class LibraryIndexer:
@@ -141,13 +221,14 @@ class LibraryIndexer:
         file_path: Path,
         duration_sec: float,
         id3_bpm: Optional[int] = None
-    ) -> Tuple[int, str, str, float]:
+    ) -> Tuple[int, str, str, float, str]:
         """
         Analyzes audio file using FFmpeg and librosa:
         1. Estimates BPM (using id3_bpm if present, else librosa beat_track on a 60s slice).
         2. Detects intro_sec (where the main beat / drop kicks in via RMS envelope).
         3. Classifies energy level ('low', 'medium', 'high', 'max') combining RMS density and tempo.
-        Returns: (bpm, bpm_source, energy, intro_sec)
+        4. Detects Camelot harmonic musical key (e.g. '8A', '11B') using Krumhansl-Schmuckler chroma correlation.
+        Returns: (bpm, bpm_source, energy, intro_sec, key)
         """
         target_slice_duration = min(60.0, max(10.0, duration_sec))
         if duration_sec > target_slice_duration:
@@ -159,6 +240,7 @@ class LibraryIndexer:
         bpm_source = "id3" if (id3_bpm is not None and id3_bpm > 0) else "fallback_default"
         energy = "medium"
         intro_sec = 0.0
+        key = "8B"
 
         try:
             import librosa
@@ -194,7 +276,7 @@ class LibraryIndexer:
                                     intro_sec = round(max(0.0, float(times[i])), 1)
                                     break
 
-            # 2. Decode middle slice for BPM (if not in ID3) and overall energy density
+            # 2. Decode middle slice for BPM (if not in ID3), Camelot Key, and overall energy density
             cmd_mid = [
                 "ffmpeg", "-v", "error",
                 "-ss", str(offset),
@@ -220,6 +302,16 @@ class LibraryIndexer:
                     if computed_bpm > 0:
                         bpm = max(60, min(computed_bpm, 220))
                         bpm_source = "librosa_analysis"
+
+                # Compute Chroma CQT for Camelot Key Estimation (SUB/WAVE Krumhansl-Schmuckler)
+                try:
+                    chroma = librosa.feature.chroma_cqt(y=y_mid, sr=22050)
+                    if chroma.shape[1] > 0:
+                        chroma_mean = [float(x) for x in np.mean(chroma, axis=1)]
+                        key = estimate_camelot_key(chroma_mean)
+                except Exception as e_key:
+                    logger.debug("Chroma key estimation failed on %s: %s", file_path.name, e_key)
+                    key = "8B"
 
                 # Compute RMS energy density
                 rms_mid = float(np.sqrt(np.mean(y_mid ** 2)))
@@ -249,8 +341,9 @@ class LibraryIndexer:
                 energy = "medium"
             else:
                 energy = "low"
+            key = "8B"
 
-        return bpm, bpm_source, energy, intro_sec
+        return bpm, bpm_source, energy, intro_sec, key
 
     def scan_library(self, force_rescan: bool = False) -> List[TrackMetadata]:
         """
@@ -306,7 +399,7 @@ class LibraryIndexer:
 
                     logger.info("Indexing track: %s (%.1fs)", file_path.name, duration)
 
-                    bpm, bpm_source, energy, intro_sec = self._analyze_audio_properties(file_path, duration, id3_bpm=bpm)
+                    bpm, bpm_source, energy, intro_sec, key = self._analyze_audio_properties(file_path, duration, id3_bpm=bpm)
 
                     track = TrackMetadata(
                         path=path_str,
@@ -316,6 +409,7 @@ class LibraryIndexer:
                         duration_sec=duration,
                         bpm=bpm,
                         bpm_source=bpm_source,
+                        key=key,
                         energy=energy,
                         intro_sec=intro_sec,
                         mtime=mtime
@@ -344,11 +438,14 @@ class LibraryIndexer:
         segments: List[Segment]
     ) -> List[Tuple[int, List[Path]]]:
         """
-        Track selection algorithm:
-        Picks tracks matching each segment's target_bpm_range (with ±5% tolerance or
-        half/double-time fallback) to cover segment.duration_sec,
-        strictly avoiding duplicate tracks and identical song titles in the same workout.
-        Returns a list of tuples: [(segment_duration_sec, [track_path_1, track_path_2, ...]), ...]
+        SUB/WAVE Track Selection & Harmonic Pacing Framework:
+        Multi-factor soft ranking combining:
+          1. Energy alignment: Matches workout segment intensity ('low', 'medium', 'high', 'max').
+          2. Tempo proximity: Octave-safe BPM compatibility (bpm_compat folding half/double time).
+          3. Harmonic mix continuity: Camelot key transitions (key_compat) with previous track.
+          4. Drop advantage: Prioritizes tracks with verified intro drops for high-intensity intervals.
+          5. Variety guard: Cooldown penalty against repeating recent artists/tracks.
+        Returns: [(segment_duration_sec, [track_path_1, track_path_2, ...]), ...]
         """
         all_tracks = self.get_tracks()
         if not all_tracks:
@@ -364,19 +461,21 @@ class LibraryIndexer:
         def is_available(t: TrackMetadata) -> bool:
             if t.path in used_paths:
                 return False
-            key = (t.title.strip().lower(), t.artist.strip().lower())
-            if key in used_song_keys:
+            key_tuple = (t.title.strip().lower(), t.artist.strip().lower())
+            if key_tuple in used_song_keys:
                 return False
             return True
 
         energy_rank = {"low": 1, "medium": 2, "high": 3, "max": 4}
+        prev_track: Optional[TrackMetadata] = None
+        recent_artists: List[str] = []
 
         for segment in segments:
             min_bpm, max_bpm = segment.target_bpm_range
             target_duration = segment.duration_sec
             seg_intensity = segment.intensity.lower()
             target_energy_level = energy_rank.get(seg_intensity, 2)
-            target_mid = (min_bpm + max_bpm) / 2
+            target_mid = (min_bpm + max_bpm) / 2.0
 
             segment_accumulated_sec = 0.0
             segment_tracks: List[Path] = []
@@ -387,29 +486,40 @@ class LibraryIndexer:
                 diff = abs(target_energy_level - t_energy_level)
                 energy_score = max(0.1, 1.0 - diff * 0.3)
 
-                # 2. BPM proximity score (0.0 to 1.0)
-                if min_bpm <= t.bpm <= max_bpm:
-                    bpm_score = 1.0
-                elif min_bpm <= t.bpm * 2 <= max_bpm or min_bpm <= t.bpm / 2 <= max_bpm:
-                    bpm_score = 0.9  # half/double time harmonic compatibility
-                else:
-                    tol_min = int(min_bpm * 0.92)
-                    tol_max = int(max_bpm * 1.08)
-                    if tol_min <= t.bpm <= tol_max:
-                        bpm_score = 0.75
-                    else:
-                        bpm_score = max(0.1, 1.0 - abs(t.bpm - target_mid) / 50.0)
+                # 2. Octave-safe tempo compatibility score (0.0 to 1.0)
+                tempo_score = bpm_compat(target_mid, float(t.bpm))
 
-                # 3. Drop advantage for high intensity
+                # 3. Harmonic transition continuity with previous track (SUB/WAVE mix.ts)
+                if prev_track is not None:
+                    h_compat = key_compat(prev_track.key, t.key)
+                    t_trans = bpm_compat(float(prev_track.bpm), float(t.bpm))
+                    transition_score = 0.5 * h_compat + 0.5 * t_trans
+                else:
+                    transition_score = 1.0
+
+                # 4. Drop advantage for high intensity (bonus if beat drops into sprint)
                 drop_score = 0.0
                 if seg_intensity in ("high", "max") and t.intro_sec > 0:
-                    drop_score = 0.1
+                    drop_score = 0.15
 
-                return energy_score * 0.5 + bpm_score * 0.4 + drop_score
+                # 5. Variety guard penalty (avoid playing same artist twice consecutively)
+                artist_penalty = 0.0
+                if t.artist and any(t.artist.strip().lower() == a.strip().lower() for a in recent_artists[-2:]):
+                    artist_penalty = 0.25
+
+                # Composite score inspired by SUB/WAVE picker.ts
+                return (
+                    energy_score * 0.35 +
+                    tempo_score * 0.30 +
+                    transition_score * 0.20 +
+                    drop_score -
+                    artist_penalty
+                )
 
             # 1. Available tracks matching target criteria
             available = [t for t in all_tracks if is_available(t)]
             if not available:
+                # If exhausted, allow reusing tracks from outside the immediately previous segment
                 available = list(all_tracks)
 
             candidates = sorted(
@@ -422,6 +532,10 @@ class LibraryIndexer:
                 segment_tracks.append(Path(track.path))
                 used_paths.add(track.path)
                 used_song_keys.add((track.title.strip().lower(), track.artist.strip().lower()))
+                prev_track = track
+                if track.artist:
+                    recent_artists.append(track.artist)
+
                 # First track gives full duration; subsequent tracks lose 4.0s in acrossfade
                 effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 4.0)
                 segment_accumulated_sec += effective_duration
@@ -435,6 +549,7 @@ class LibraryIndexer:
                 while segment_accumulated_sec < target_duration and pool:
                     track = pool[pool_idx % len(pool)]
                     segment_tracks.append(Path(track.path))
+                    prev_track = track
                     effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 4.0)
                     segment_accumulated_sec += effective_duration
                     pool_idx += 1
