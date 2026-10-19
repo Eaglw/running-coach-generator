@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it" class="dark">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -39,7 +39,7 @@
         <div>
           <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
             Running Coach Generator
-            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">v1.0 Ready</span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">v1.0 Active</span>
           </h1>
           <p class="text-xs text-slate-400">AI Guided Workouts • Music Sync • Apple Podcasts RSS</p>
         </div>
@@ -47,7 +47,7 @@
       <div class="flex items-center space-x-2">
         <button onclick="copyFeedUrl()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition">
           <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
-          <span id="copyBtnText">Copia URL Feed RSS</span>
+          <span id="copyBtnText">Copy RSS Feed URL</span>
         </button>
       </div>
     </div>
@@ -57,16 +57,16 @@
   <div class="max-w-7xl mx-auto px-4 pt-6 w-full">
     <div class="flex border-b border-slate-800 space-x-8 text-sm font-medium">
       <button onclick="switchTab('tab-workout')" id="nav-workout" class="pb-3 text-emerald-400 border-b-2 border-emerald-400 flex items-center gap-2">
-        <span>⚡</span> Crea Workout
+        <span>⚡</span> Create Workout
       </button>
       <button onclick="switchTab('tab-podcast')" id="nav-podcast" class="pb-3 text-slate-400 hover:text-slate-200 flex items-center gap-2">
-        <span>🎙️</span> Podcast & Episodi
+        <span>🎙️</span> Podcast & Episodes
       </button>
       <button onclick="switchTab('tab-library')" id="nav-library" class="pb-3 text-slate-400 hover:text-slate-200 flex items-center gap-2">
-        <span>🎵</span> Libreria Musicale
+        <span>🎵</span> Music Library
       </button>
       <button onclick="switchTab('tab-settings')" id="nav-settings" class="pb-3 text-slate-400 hover:text-slate-200 flex items-center gap-2">
-        <span>⚙️</span> Impostazioni
+        <span>⚙️</span> Settings
       </button>
     </div>
   </div>
@@ -82,44 +82,44 @@
         <div class="lg:col-span-7 space-y-6">
           <div class="glass-card rounded-2xl p-6">
             <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span>✍️</span> Descrivi l'allenamento di oggi
+              <span>✍️</span> Describe Today's Workout
             </h2>
 
             <div class="space-y-4">
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Prompt Vocale o Descrizione Libera</label>
-                <textarea id="promptInput" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition" placeholder="Es: Oggi 10 minuti di riscaldamento a 5:30/km, poi 20 minuti di ritmo medio a 4:40 e 5 minuti di defaticamento finale."></textarea>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Voice Dictation or Free-Text Prompt</label>
+                <textarea id="promptInput" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition" placeholder="e.g.: Today 10 minutes progressive warmup at 5:30/km, then 20 minutes tempo run at 4:40/km, and 5 minutes final cooldown."></textarea>
               </div>
 
               <!-- Quick Presets -->
               <div>
-                <span class="text-xs text-slate-400 font-medium">Oppure scegli un preset rapido:</span>
+                <span class="text-xs text-slate-400 font-medium">Or choose a quick preset:</span>
                 <div class="flex flex-wrap gap-2 mt-2">
-                  <button onclick="setPreset('45min-progressivo')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
-                    🏃 45m Progressivo (10m lento + 25m medio + 10m defat.)
+                  <button onclick="setPreset('45min-progressive')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    🏃 45m Progressive (10m warmup + 25m tempo + 10m cooldown)
                   </button>
-                  <button onclick="setPreset('30min-soglia')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
-                    🔥 30m Tempo Run (8m lento + 18m soglia + 4m defat.)
+                  <button onclick="setPreset('30min-threshold')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    🔥 30m Tempo Run (8m easy + 18m threshold + 4m cooldown)
                   </button>
-                  <button onclick="setPreset('25min-rigenerante')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
-                    🌿 25m Corsa Rigenerante Zona 2
+                  <button onclick="setPreset('25min-recovery')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+                    🌿 25m Zone 2 Easy Recovery Run
                   </button>
                 </div>
               </div>
 
               <!-- Coach Persona -->
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Persona del Running Coach</label>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Running Coach Persona</label>
                 <select id="coachPersona" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
-                  <option value="tecnico_motivazionale">Tecnico Motivazionale (Professionale, ritmo, respirazione e postura)</option>
-                  <option value="calmo_mindful">Calmo Mindful (Rilassato, consapevole, ascolto del corpo)</option>
-                  <option value="militare_severo">Militare Severo (Disciplina, niente scuse, cadenza elevata)</option>
+                  <option value="tecnico_motivazionale">Technical Motivational (Professional, pace, breathing & posture)</option>
+                  <option value="calmo_mindful">Calm & Mindful (Relaxed, body awareness, fluid breathing)</option>
+                  <option value="militare_severo">Drill Sergeant (High discipline, no excuses, high cadence)</option>
                 </select>
               </div>
 
               <!-- Submit Button -->
               <button id="generateBtn" onclick="submitWorkoutPrompt()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 font-semibold text-white shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition active:scale-[0.99]">
-                <span>🎧</span> Genera e Pubblica sul Podcast
+                <span>🎧</span> Generate & Publish to Podcast
               </button>
             </div>
           </div>
@@ -129,14 +129,14 @@
         <div class="lg:col-span-5 space-y-6">
           <div class="glass-card rounded-2xl p-6">
             <h2 class="text-lg font-semibold text-white mb-4 flex items-center justify-between">
-              <span class="flex items-center gap-2"><span>📡</span> Stato di Generazione</span>
-              <span id="jobBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400">In attesa</span>
+              <span class="flex items-center gap-2"><span>📡</span> Generation Status</span>
+              <span id="jobBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400">IDLE</span>
             </h2>
 
             <!-- Progress Bar -->
             <div class="space-y-2 mb-6">
               <div class="flex justify-between text-xs text-slate-400">
-                <span id="statusMessage">Nessun job attivo</span>
+                <span id="statusMessage">No active workout generation</span>
                 <span id="progressPercent">0%</span>
               </div>
               <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700/50">
@@ -148,34 +148,34 @@
             <div class="space-y-3 text-xs text-slate-400 border-t border-slate-800/80 pt-4">
               <div id="step-script" class="flex items-center gap-2 text-slate-500">
                 <span class="w-2 h-2 rounded-full bg-slate-600"></span>
-                <span>1. Parsing LLM e stesura script vocale</span>
+                <span>1. LLM parsing & cue script writing</span>
               </div>
               <div id="step-tts" class="flex items-center gap-2 text-slate-500">
                 <span class="w-2 h-2 rounded-full bg-slate-600"></span>
-                <span>2. Sintesi neurale TTS dei cue audio</span>
+                <span>2. Neural TTS voice synthesis</span>
               </div>
               <div id="step-music" class="flex items-center gap-2 text-slate-500">
                 <span class="w-2 h-2 rounded-full bg-slate-600"></span>
-                <span>3. Matching BPM & crossfade musicale (Step A)</span>
+                <span>3. BPM matching & segment track grouping</span>
               </div>
               <div id="step-mixing" class="flex items-center gap-2 text-slate-500">
                 <span class="w-2 h-2 rounded-full bg-slate-600"></span>
-                <span>4. FFmpeg Sidechain Ducking & Mixdown MP3 (Step B)</span>
+                <span>4. FFmpeg sidechain ducking & MP3 mixdown</span>
               </div>
               <div id="step-rss" class="flex items-center gap-2 text-slate-500">
                 <span class="w-2 h-2 rounded-full bg-slate-600"></span>
-                <span>5. Pubblicazione RSS per Apple Watch</span>
+                <span>5. Publication to Apple Podcasts RSS feed</span>
               </div>
             </div>
 
             <!-- Completed Player Box -->
             <div id="completedBox" class="hidden mt-6 pt-4 border-t border-slate-800 space-y-3">
               <div class="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl">
-                <p class="text-xs font-semibold text-emerald-400 mb-1">🎉 Episodio Pronto per la Corsa!</p>
+                <p class="text-xs font-semibold text-emerald-400 mb-1">🎉 Workout Episode Ready!</p>
                 <p id="completedTitle" class="text-sm font-bold text-white truncate"></p>
                 <audio id="audioPlayer" controls class="w-full mt-3 h-9"></audio>
                 <div class="mt-2 flex justify-end">
-                  <a id="downloadLink" href="#" download class="text-xs text-emerald-400 hover:text-emerald-300 underline font-medium">Scarica MP3</a>
+                  <a id="downloadLink" href="#" download class="text-xs text-emerald-400 hover:text-emerald-300 underline font-medium">Download MP3</a>
                 </div>
               </div>
             </div>
@@ -190,37 +190,37 @@
     <section id="tab-podcast" class="hidden space-y-6">
       <div class="glass-card rounded-2xl p-6">
         <h2 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
-          <span>🎙️</span> Sincronizzazione Apple Podcasts / Apple Watch
+          <span>🎙️</span> Apple Podcasts & Apple Watch Sync
         </h2>
         <p class="text-sm text-slate-400 mb-4">
-          Apple Podcasts supporta la riproduzione offline e lo streaming diretto su Apple Watch tramite Feed RSS privati.
+          Apple Podcasts supports offline playback and automatic background sync to your Apple Watch via private RSS feeds.
         </p>
 
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div class="space-y-1">
-            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">URL del tuo Podcast Feed</span>
+            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Your Podcast Feed URL</span>
             <div class="text-sm font-mono text-emerald-400 break-all" id="feedUrlDisplay">http://localhost:8000/podcast/feed.xml</div>
           </div>
           <div class="flex gap-2">
             <button onclick="copyFeedUrl()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition">
-              Copia Link
+              Copy Link
             </button>
             <a id="feedDirectLink" href="/podcast/feed.xml" target="_blank" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700 transition">
-              Apri XML
+              Open Raw XML
             </a>
           </div>
         </div>
 
         <div class="mt-4 p-3 bg-slate-900/50 rounded-xl border border-slate-800/80 text-xs text-slate-400">
-          💡 <strong class="text-slate-300">Come sincronizzare su Apple Watch:</strong> Apri l'app <em>Apple Podcasts</em> su iPhone ➔ Scheda <em>Libreria</em> ➔ Tocca i tre puntini (...) in alto a destra ➔ <em>"Segui uno spettacolo tramite URL..."</em> ➔ Incolla questo link. L'allenamento verrà sincronizzato automaticamente sul tuo Apple Watch per l'ascolto offline senza iPhone!
+          💡 <strong class="text-slate-300">How to sync with Apple Watch:</strong> Open the <em>Apple Podcasts</em> app on your iPhone ➔ Tap the <em>Library</em> tab ➔ Tap the three dots (...) in top right ➔ <em>"Follow a Show by URL..."</em> ➔ Paste this URL. Workouts will download automatically to your Apple Watch for phone-free offline running!
         </div>
       </div>
 
       <!-- Episode List -->
       <div class="glass-card rounded-2xl p-6">
-        <h3 class="text-md font-semibold text-white mb-4">Episodi Disponibili sul Feed</h3>
+        <h3 class="text-md font-semibold text-white mb-4">Available Workout Episodes</h3>
         <div id="episodesList" class="space-y-3">
-          <div class="text-xs text-slate-500 py-4 text-center">Caricamento episodi...</div>
+          <div class="text-xs text-slate-500 py-4 text-center">Loading episodes...</div>
         </div>
       </div>
     </section>
@@ -231,13 +231,13 @@
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-              <span>🎵</span> Libreria Musicale Locale
+              <span>🎵</span> Local Music Library
             </h2>
-            <p class="text-xs text-slate-400">Tracce scansionate in <code class="text-emerald-400">/data/music</code> per il mixing a tempo.</p>
+            <p class="text-xs text-slate-400">Tracks indexed in <code class="text-emerald-400">/data/music</code> for tempo-matched mixing.</p>
           </div>
           <button onclick="scanMusicLibrary()" id="rescanBtn" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-2 transition">
             <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-            <span>Riscansiona Libreria</span>
+            <span>Rescan Library</span>
           </button>
         </div>
 
@@ -245,16 +245,16 @@
           <table class="w-full text-left text-xs text-slate-300">
             <thead class="bg-slate-900/60 uppercase font-semibold text-slate-400 border-b border-slate-800">
               <tr>
-                <th class="py-3 px-4">Titolo</th>
-                <th class="py-3 px-4">Artista</th>
+                <th class="py-3 px-4">Title</th>
+                <th class="py-3 px-4">Artist</th>
                 <th class="py-3 px-4">BPM</th>
-                <th class="py-3 px-4">Durata</th>
-                <th class="py-3 px-4">Sorgente BPM</th>
+                <th class="py-3 px-4">Duration</th>
+                <th class="py-3 px-4">BPM Source</th>
               </tr>
             </thead>
             <tbody id="libraryTableBody" class="divide-y divide-slate-800/60 font-mono">
               <tr>
-                <td colspan="5" class="py-4 text-center text-slate-500 font-sans">Caricamento tracce musicali...</td>
+                <td colspan="5" class="py-4 text-center text-slate-500 font-sans">Loading music tracks...</td>
               </tr>
             </tbody>
           </table>
@@ -267,20 +267,20 @@
       <div class="glass-card rounded-2xl p-6 max-w-3xl space-y-6">
         <div>
           <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-            <span>⚙️</span> Configurazione LLM & TTS Engine
+            <span>⚙️</span> LLM & TTS Engine Settings
           </h2>
-          <p class="text-xs text-slate-400">Scegli il provider di intelligenza artificiale e la voce neurale per il tuo running coach.</p>
+          <p class="text-xs text-slate-400">Select your preferred AI provider, model endpoint, and neural TTS voice for the running coach.</p>
         </div>
 
         <!-- 1. LLM Provider Quick Presets -->
         <div class="p-4 bg-slate-900/80 rounded-xl border border-slate-800 space-y-3">
-          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Seleziona Provider LLM con 1 Clic</label>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Quick 1-Click LLM Presets</label>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <button onclick="applyLlmPreset('ollama')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
-              <span>🦙</span> Ollama (Locale)
+              <span>🦙</span> Ollama (Local)
             </button>
             <button onclick="applyLlmPreset('lmstudio')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
-              <span>💻</span> LM Studio (Locale)
+              <span>💻</span> LM Studio (Local)
             </button>
             <button onclick="applyLlmPreset('gemini')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
               <span>✨</span> Google Gemini
@@ -301,7 +301,7 @@
         <div class="space-y-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Provider Attivo</label>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Active Provider</label>
               <select id="cfgLlmProvider" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
                 <option value="gemini">Google Gemini</option>
                 <option value="ollama">Ollama (Local)</option>
@@ -312,20 +312,20 @@
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Nome Modello</label>
-              <input type="text" id="cfgLlmModel" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="es. gemini-2.5-flash o llama3.2">
+              <label class="block text-xs font-medium text-slate-400 mb-1">Model Name</label>
+              <input type="text" id="cfgLlmModel" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="e.g. gemini-2.5-flash or llama3.2">
             </div>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Base URL Endpoint API</label>
+            <label class="block text-xs font-medium text-slate-400 mb-1">API Base URL Endpoint</label>
             <input type="text" id="cfgLlmBaseUrl" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="https://api.openai.com/v1">
           </div>
 
           <div>
             <div class="flex justify-between items-center mb-1">
-              <label class="text-xs font-medium text-slate-400">API Key (opzionale per Ollama/LM Studio locale)</label>
-              <button type="button" onclick="toggleApiKeyVisibility()" class="text-[11px] text-slate-400 hover:text-slate-200 underline">Mostra/Nascondi</button>
+              <label class="text-xs font-medium text-slate-400">API Key (optional for local Ollama / LM Studio)</label>
+              <button type="button" onclick="toggleApiKeyVisibility()" class="text-[11px] text-slate-400 hover:text-slate-200 underline">Show/Hide</button>
             </div>
             <input type="password" id="cfgLlmApiKey" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="sk-...">
           </div>
@@ -333,7 +333,7 @@
           <!-- Test LLM Button & Response Box -->
           <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-1">
             <button type="button" onclick="testLlmConnection()" id="testLlmBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 rounded-xl flex items-center gap-2 transition">
-              <span>🧪</span> Testa Connessione LLM
+              <span>🧪</span> Test LLM Connection
             </button>
             <div id="llmTestResult" class="hidden text-xs px-3 py-1.5 rounded-lg"></div>
           </div>
@@ -344,23 +344,23 @@
         <!-- 2. TTS Configuration -->
         <div class="space-y-4">
           <h3 class="text-sm font-semibold text-white flex items-center gap-2">
-            <span>🗣️</span> Motore di Sintesi Vocale (TTS)
+            <span>🗣️</span> Text-to-Speech (TTS) Voice Engine
           </h3>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">TTS Engine</label>
               <select id="cfgTtsEngine" onchange="onTtsEngineChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
-                <option value="piper">Piper TTS (Neurale Locale ONNX)</option>
-                <option value="kokoro">Kokoro TTS (Neurale v1.0)</option>
-                <option value="fallback">Fallback Sistema (espeak-ng)</option>
+                <option value="piper">Piper TTS (Fast Local Neural ONNX)</option>
+                <option value="kokoro">Kokoro TTS (Neural Multilingual v1.0)</option>
+                <option value="fallback">System Fallback (espeak-ng)</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Voce Italiana</label>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Voice Identifier</label>
               <select id="cfgTtsVoice" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
-                <option value="it_IT-riccardo-x_low">Riccardo (Maschile, Leggera) - it_IT-riccardo-x_low</option>
-                <option value="it_IT-paola-medium">Paola (Femminile, Media) - it_IT-paola-medium</option>
+                <option value="it_IT-riccardo-x_low">Riccardo (Male, Lightweight) - it_IT-riccardo-x_low</option>
+                <option value="it_IT-paola-medium">Paola (Female, Medium) - it_IT-paola-medium</option>
               </select>
             </div>
           </div>
@@ -371,16 +371,16 @@
         <!-- 3. Web & Podcast Settings -->
         <div class="space-y-4">
           <h3 class="text-sm font-semibold text-white flex items-center gap-2">
-            <span>📻</span> Parametri Feed Podcast
+            <span>📻</span> Podcast Channel Parameters
           </h3>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Base URL (Accessibile da Apple Watch)</label>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Base URL (Accessible by Apple Watch)</label>
               <input type="text" id="cfgBaseUrl" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="http://192.168.1.100:8000">
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Titolo Canale Podcast</label>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Podcast Channel Title</label>
               <input type="text" id="cfgPodcastTitle" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500" placeholder="Running Coach Daily">
             </div>
           </div>
@@ -389,7 +389,7 @@
         <!-- Save Button -->
         <div class="pt-2 flex justify-end">
           <button type="button" onclick="saveSettings()" id="saveSettingsBtn" class="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 font-semibold text-white text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition active:scale-[0.99]">
-            <span>💾</span> Salva Impostazioni
+            <span>💾</span> Save Settings
           </button>
         </div>
 
@@ -405,12 +405,12 @@
     // Presets helper
     function setPreset(type) {
       const promptEl = document.getElementById('promptInput');
-      if (type === '45min-progressivo') {
-        promptEl.value = 'Riscaldamento 10 min a 5:30/km, fase centrale 25 min progressivi a ritmo medio 4:45/km, e 10 min defaticamento a 6:00/km.';
-      } else if (type === '30min-soglia') {
-        promptEl.value = '8 min corsa lenta a 5:30/km, blocco a soglia di 18 min a 4:30/km spinto, e defaticamento 4 min.';
-      } else if (type === '25min-rigenerante') {
-        promptEl.value = 'Corsa rigenerante continua da 25 minuti in Zona 2 con cadenza costante e musica rilassante.';
+      if (type === '45min-progressive') {
+        promptEl.value = 'Warmup 10 min at 5:30/km, progressive tempo block 25 min at 4:45/km, and 10 min cooldown at 6:00/km.';
+      } else if (type === '30min-threshold') {
+        promptEl.value = '8 min easy run at 5:30/km, threshold tempo block 18 min at 4:30/km, and 4 min recovery cooldown.';
+      } else if (type === '25min-recovery') {
+        promptEl.value = '25 minutes easy Zone 2 recovery run with steady cadence and relaxing background music.';
       }
     }
 
@@ -441,13 +441,13 @@
       const persona = document.getElementById('coachPersona').value;
 
       if (!promptText) {
-        alert('Inserisci una descrizione per il tuo allenamento!');
+        alert('Please enter a description for your workout!');
         return;
       }
 
       const generateBtn = document.getElementById('generateBtn');
       generateBtn.disabled = true;
-      generateBtn.innerHTML = '<span>⏳</span> Accodamento in corso...';
+      generateBtn.innerHTML = '<span>⏳</span> Enqueueing job...';
 
       try {
         const res = await fetch('/api/v1/workout/from-text', {
@@ -459,9 +459,9 @@
         activeJobId = data.job_id;
         startJobPolling(activeJobId);
       } catch (err) {
-        alert('Errore di connessione: ' + err);
+        alert('Connection error: ' + err);
         generateBtn.disabled = false;
-        generateBtn.innerHTML = '<span>🎧</span> Genera e Pubblica sul Podcast';
+        generateBtn.innerHTML = '<span>🎧</span> Generate & Publish to Podcast';
       }
     }
 
@@ -480,7 +480,7 @@
           if (job.status === 'completed' || job.status === 'failed') {
             clearInterval(pollInterval);
             document.getElementById('generateBtn').disabled = false;
-            document.getElementById('generateBtn').innerHTML = '<span>🎧</span> Genera e Pubblica sul Podcast';
+            document.getElementById('generateBtn').innerHTML = '<span>🎧</span> Generate & Publish to Podcast';
           }
         } catch (e) {
           console.error(e);
@@ -525,23 +525,23 @@
       });
 
       if (job.status === 'generating_script') {
-        msg.textContent = 'Parsing prompt e generazione script vocale...';
+        msg.textContent = 'Parsing prompt & writing coach scripts...';
       } else if (job.status === 'synthesizing_tts') {
-        msg.textContent = 'Sintesi vocale TTS in corso...';
+        msg.textContent = 'Neural TTS voice synthesis in progress...';
       } else if (job.status === 'mixing_audio') {
-        msg.textContent = 'FFmpeg: crossfade musicale & sidechain ducking...';
+        msg.textContent = 'FFmpeg: music crossfade & sidechain ducking...';
       } else if (job.status === 'completed') {
-        msg.textContent = 'Allenamento completato!';
+        msg.textContent = 'Workout successfully generated!';
         badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
         if (job.episode_url) {
           document.getElementById('completedBox').classList.remove('hidden');
-          document.getElementById('completedTitle').textContent = job.workout_title || 'Nuovo Episodio Workout';
+          document.getElementById('completedTitle').textContent = job.workout_title || 'New Workout Episode';
           const audio = document.getElementById('audioPlayer');
           audio.src = job.episode_url;
           document.getElementById('downloadLink').href = job.episode_url;
         }
       } else if (job.status === 'failed') {
-        msg.textContent = 'Errore: ' + (job.error || 'Generazione fallita');
+        msg.textContent = 'Error: ' + (job.error || 'Generation failed');
         badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
       }
     }
@@ -553,7 +553,7 @@
         const list = await res.json();
         const container = document.getElementById('episodesList');
         if (!list || list.length === 0) {
-          container.innerHTML = '<div class="text-xs text-slate-500 py-4 text-center">Nessun episodio ancora pubblicato. Genera il tuo primo workout!</div>';
+          container.innerHTML = '<div class="text-xs text-slate-500 py-4 text-center">No episodes published yet. Generate your first workout above!</div>';
           return;
         }
         container.innerHTML = list.map(ep => `
@@ -585,7 +585,7 @@
         const tracks = await res.json();
         const tbody = document.getElementById('libraryTableBody');
         if (!tracks || tracks.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans">Nessuna traccia trovata in /data/music. Aggiungi file MP3 o FLAC e premi "Riscansiona Libreria".</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans">No music tracks found in /data/music. Place MP3 or FLAC files in the folder and click "Rescan Library".</td></tr>';
           return;
         }
         tbody.innerHTML = tracks.map(t => `
@@ -609,13 +609,13 @@
     async function scanMusicLibrary() {
       const btn = document.getElementById('rescanBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span> Scansione...';
+      btn.innerHTML = '<span>⏳</span> Scanning...';
       try {
         await fetch('/api/v1/library/scan', { method: 'POST' });
         await loadLibrary();
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<span>Riscansiona Libreria</span>';
+        btn.innerHTML = '<span>Rescan Library</span>';
       }
     }
 
@@ -630,17 +630,17 @@
         p.value = 'ollama';
         u.value = 'http://localhost:11434/v1';
         m.value = 'llama3.2';
-        k.placeholder = 'Non richiesta per Ollama locale';
+        k.placeholder = 'Not required for local Ollama';
       } else if (preset === 'lmstudio') {
         p.value = 'lmstudio';
         u.value = 'http://localhost:1234/v1';
         m.value = 'local-model';
-        k.placeholder = 'Non richiesta per LM Studio';
+        k.placeholder = 'Not required for LM Studio';
       } else if (preset === 'gemini') {
         p.value = 'gemini';
         u.value = 'https://generativelanguage.googleapis.com/v1beta/openai/';
         m.value = 'gemini-2.5-flash';
-        k.placeholder = 'Chiave API Google AI Studio';
+        k.placeholder = 'Google AI Studio API Key';
       } else if (preset === 'openai') {
         p.value = 'openai';
         u.value = 'https://api.openai.com/v1';
@@ -653,7 +653,7 @@
         k.placeholder = 'sk-ant-...';
       } else if (preset === 'custom') {
         p.value = 'custom';
-        k.placeholder = 'API Key se richiesta';
+        k.placeholder = 'API Key if required';
       }
     }
 
@@ -669,17 +669,17 @@
 
       if (engine === 'piper') {
         voiceSelect.innerHTML = `
-          <option value="it_IT-riccardo-x_low">Riccardo (Maschile, Leggera) - it_IT-riccardo-x_low</option>
-          <option value="it_IT-paola-medium">Paola (Femminile, Media) - it_IT-paola-medium</option>
+          <option value="it_IT-riccardo-x_low">Riccardo (Male, Lightweight) - it_IT-riccardo-x_low</option>
+          <option value="it_IT-paola-medium">Paola (Female, Medium) - it_IT-paola-medium</option>
         `;
       } else if (engine === 'kokoro') {
         voiceSelect.innerHTML = `
-          <option value="im_nicola">Nicola (Maschile) - im_nicola</option>
-          <option value="if_sara">Sara (Femminile) - if_sara</option>
+          <option value="im_nicola">Nicola (Male) - im_nicola</option>
+          <option value="if_sara">Sara (Female) - if_sara</option>
         `;
       } else {
         voiceSelect.innerHTML = `
-          <option value="fallback">Voce di Sistema (espeak-ng / synth)</option>
+          <option value="fallback">System Voice (espeak-ng / synth)</option>
         `;
       }
     }
@@ -707,7 +707,7 @@
     async function saveSettings() {
       const btn = document.getElementById('saveSettingsBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span> Salvataggio...';
+      btn.innerHTML = '<span>⏳</span> Saving...';
 
       const payload = {
         LLM_PROVIDER: document.getElementById('cfgLlmProvider').value,
@@ -727,20 +727,20 @@
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          btn.innerHTML = '<span>✅</span> Salvato!';
+          btn.innerHTML = '<span>✅</span> Saved!';
           setTimeout(() => {
             btn.disabled = false;
-            btn.innerHTML = '<span>💾</span> Salva Impostazioni';
+            btn.innerHTML = '<span>💾</span> Save Settings';
           }, 2000);
         } else {
-          alert('Errore durante il salvataggio');
+          alert('Error saving settings');
           btn.disabled = false;
-          btn.innerHTML = '<span>💾</span> Salva Impostazioni';
+          btn.innerHTML = '<span>💾</span> Save Settings';
         }
       } catch (e) {
-        alert('Errore di connessione: ' + e);
+        alert('Connection error: ' + e);
         btn.disabled = false;
-        btn.innerHTML = '<span>💾</span> Salva Impostazioni';
+        btn.innerHTML = '<span>💾</span> Save Settings';
       }
     }
 
@@ -748,7 +748,7 @@
       const btn = document.getElementById('testLlmBtn');
       const box = document.getElementById('llmTestResult');
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span> Test in corso...';
+      btn.innerHTML = '<span>⏳</span> Testing...';
       box.classList.add('hidden');
 
       const tempUpdates = {
@@ -770,18 +770,18 @@
 
         if (data.status === 'success') {
           box.className = 'text-xs px-3 py-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300';
-          box.innerHTML = `<strong>✅ Connessione Riuscita (${data.elapsed_ms}ms)</strong>: ${data.response}`;
+          box.innerHTML = `<strong>✅ Connection Successful (${data.elapsed_ms}ms)</strong>: ${data.response}`;
         } else {
           box.className = 'text-xs px-3 py-2 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300';
-          box.innerHTML = `<strong>❌ Errore (${data.elapsed_ms}ms)</strong>: ${data.error || 'Nessuna risposta'}`;
+          box.innerHTML = `<strong>❌ Error (${data.elapsed_ms}ms)</strong>: ${data.error || 'No response'}`;
         }
       } catch (e) {
         box.classList.remove('hidden');
         box.className = 'text-xs px-3 py-2 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300';
-        box.innerHTML = `<strong>❌ Errore di connessione:</strong> ${e}`;
+        box.innerHTML = `<strong>❌ Connection Error:</strong> ${e}`;
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<span>🧪</span> Testa Connessione LLM';
+        btn.innerHTML = '<span>🧪</span> Test LLM Connection';
       }
     }
 
@@ -791,8 +791,8 @@
       navigator.clipboard.writeText(url).then(() => {
         const btn = document.getElementById('copyBtnText');
         if (btn) {
-          btn.textContent = 'Copiato!';
-          setTimeout(() => btn.textContent = 'Copia URL Feed RSS', 2000);
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = 'Copy RSS Feed URL', 2000);
         }
       });
     }

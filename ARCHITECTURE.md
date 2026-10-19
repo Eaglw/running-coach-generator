@@ -93,6 +93,14 @@ When maintaining or extending this codebase, **do not revert** these design deci
 * FastAPI's `StaticFiles` natively supports `HTTP Range`. Thus, `/podcast` is mounted via `StaticFiles(directory=settings.PODCAST_DIR)`.
 * An explicit `GET /podcast/feed.xml` route is declared before the mount to guarantee `Content-Type: application/rss+xml`.
 
+### G. Multi-Provider LLM Dispatch & Settings Persistence
+* `LLMCoach` (`app/services/llm_coach.py`) automatically dispatches requests according to `settings.LLM_PROVIDER`:
+  - **Ollama & LM Studio:** Uses `openai.OpenAI` pointing to `http://localhost:11434/v1` or `http://localhost:1234/v1` with automatic fallback when local models reject strict `json_object` enforcement.
+  - **Google Gemini & OpenAI:** Calls official OpenAI-compatible endpoints with structured JSON schemas.
+  - **Anthropic Claude:** Executes direct HTTP calls to the Anthropic Messages API (`https://api.anthropic.com/v1/messages`) with headers `x-api-key` and `anthropic-version: 2023-06-01` without requiring third-party Anthropic SDK bloat.
+  - **Connection Testing:** `POST /api/v1/settings/test-llm` sends a lightweight ping prompt to measure roundtrip latency and catch model configuration issues prior to running workouts.
+* Settings edited in the Web GUI are saved to `/data/cache/settings.json` via `settings.save_dynamic_settings()`, surviving container rebuilds and server restarts.
+
 ---
 
 ## 4. Background Job Pipeline Flow

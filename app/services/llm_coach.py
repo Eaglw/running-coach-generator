@@ -11,17 +11,17 @@ from app.models import CoachCue, Segment, WorkoutRequest
 
 logger = logging.getLogger(__name__)
 
-WORKOUT_SYSTEM_PROMPT = """Sei un esperto allenatore di atletica e corsa su strada.
-Il tuo compito è convertire la descrizione naturale di un allenamento in un oggetto JSON rigoroso e valido per un audio-workout.
+WORKOUT_SYSTEM_PROMPT = """You are an expert running coach and athletics trainer.
+Your job is to convert a natural language workout description into a strict, validated JSON specification for an audio-guided workout.
 
-Formato JSON atteso:
+Expected JSON structure:
 {
-  "workout_title": "Titolo descrittivo dell'allenamento",
+  "workout_title": "Descriptive Workout Title",
   "coach_persona": "tecnico_motivazionale",
   "total_duration_sec": 2700,
   "segments": [
     {
-      "name": "Riscaldamento",
+      "name": "Progressive Warmup",
       "duration_sec": 600,
       "intensity": "low",
       "target_bpm_range": [115, 130],
@@ -29,12 +29,12 @@ Formato JSON atteso:
       "coach_cues": [
         {
           "offset_sec": 5,
-          "intent": "Benvenuto, spiegazione allenamento e avvio corsa blanda.",
+          "intent": "Welcome runner, explain workout structure and start easy jog.",
           "spoken_text": null
         },
         {
           "offset_sec": 570,
-          "intent": "Avviso fine riscaldamento: tra 30 secondi inizia la fase centrale.",
+          "intent": "Warmup ending soon: 30 seconds until the main tempo block.",
           "spoken_text": null
         }
       ]
@@ -42,23 +42,23 @@ Formato JSON atteso:
   ]
 }
 
-Regole importanti:
-1. `coach_cues` deve contenere almeno 1 cue iniziale all'inizio di ciascun segmento (offset_sec ~5s) e 1 cue prima del termine se il segmento dura più di 3 minuti.
-2. `target_bpm_range` deve essere coerente: low intensity -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
-3. `total_duration_sec` deve essere la somma esatta dei `duration_sec` di tutti i segmenti.
-4. Restituisci SOLO ed esclusivamente il codice JSON valido, senza testo o markdown aggiuntivo.
+Key rules:
+1. `coach_cues` must contain at least 1 cue at the start of each segment (offset_sec ~5s) and 1 preview cue before ending if segment > 3 minutes.
+2. `target_bpm_range` must align with intensity: low -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
+3. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
+4. Output ONLY the valid JSON object, without markdown formatting or surrounding conversational text.
 """
 
-SCRIPT_SYSTEM_PROMPT = """Sei la voce del running coach in cuffia durante un allenamento guidato.
-Genera il testo parlato esatto in lingua italiana per questo cue audio.
+SCRIPT_SYSTEM_PROMPT = """You are the voice of the running coach in the runner's headphones during a guided workout.
+Generate the exact spoken text for this coaching cue.
 
-Linee guida di stile:
+Style guidelines:
 - Persona: {coach_persona}
-  * 'tecnico_motivazionale': professionale, incoraggiante, focalizzato su ritmo, respirazione e postura.
-  * 'calmo_mindful': rilassato, consapevole, attenzione alle sensazioni del corpo e al respiro.
-  * 'militare_severo': energico, disciplinato, senza scuse, ritmo sostenuto e spinta massimale.
-- Lunghezza: breve e concisa (da 1 a 3 frasi, massimo 35 parole) così da lasciare spazio alla musica.
-- Scrivi solo il testo parlato, senza virgolette o introduzioni.
+  * 'tecnico_motivazionale': professional, encouraging, focused on cadence, breathing, and tall posture.
+  * 'calmo_mindful': relaxed, mindful, focused on bodily sensations and deep fluid breathing.
+  * 'militare_severo': energetic, disciplined, no excuses, high cadence, push through the fatigue.
+- Length: concise (1 to 3 short sentences, under 35 words) so background music stays prominent.
+- Output ONLY the spoken text, without quotation marks or explanations.
 """
 
 
@@ -259,53 +259,53 @@ class LLMCoach:
 
         # Build Warmup segment
         segments.append(Segment(
-            name="Riscaldamento Progressivo",
+            name="Progressive Warmup",
             duration_sec=durations[0],
             intensity="low",
             target_bpm_range=(118, 128),
             target_pace="5:45/km",
             coach_cues=[
-                CoachCue(offset_sec=5, intent="Benvenuto, avvio riscaldamento e postura"),
-                CoachCue(offset_sec=max(10, durations[0] - 30), intent="Preavviso passaggio al ritmo centrale")
+                CoachCue(offset_sec=5, intent="Welcome runner, start easy jog with tall posture"),
+                CoachCue(offset_sec=max(10, durations[0] - 30), intent="Notice: 30 seconds until the main workout block")
             ]
         ))
 
         # Build Central segment
         segments.append(Segment(
-            name="Fase Centrale di Lavoro",
+            name="Main Workout Block",
             duration_sec=durations[1],
             intensity="medium",
             target_bpm_range=(135, 150),
             target_pace="4:50/km",
             coach_cues=[
-                CoachCue(offset_sec=5, intent="Inizio blocco centrale: trova il ritmo e respira costante"),
-                CoachCue(offset_sec=max(20, int(durations[1] / 2)), intent="Metà segmento: verifica postura e braccia"),
-                CoachCue(offset_sec=max(10, durations[1] - 30), intent="Ultimi 30 secondi: tieni forte prima del defaticamento")
+                CoachCue(offset_sec=5, intent="Start main block: lock in your target cadence and steady breathing"),
+                CoachCue(offset_sec=max(20, int(durations[1] / 2)), intent="Halfway through block: check shoulders and arm swing"),
+                CoachCue(offset_sec=max(10, durations[1] - 30), intent="Final 30 seconds: hold your form strong before recovery")
             ]
         ))
 
         # Build Cooldown segment
         cooldown_dur = durations[2] if len(durations) > 2 else 300
         segments.append(Segment(
-            name="Defaticamento e Rientro",
+            name="Recovery Cooldown",
             duration_sec=cooldown_dur,
             intensity="low",
             target_bpm_range=(110, 125),
             target_pace="6:00/km",
             coach_cues=[
-                CoachCue(offset_sec=5, intent="Ottimo lavoro, rallenta progressivamente il passo"),
-                CoachCue(offset_sec=max(10, cooldown_dur - 20), intent="Conclusione allenamento e riepilogo finale")
+                CoachCue(offset_sec=5, intent="Great work today, bring your heart rate down with an easy jog"),
+                CoachCue(offset_sec=max(10, cooldown_dur - 20), intent="Workout complete: summary and recovery cooldown")
             ]
         ))
 
         total_sec = sum(s.duration_sec for s in segments)
-        title = "Allenamento Guidato Personalizzato"
-        if "soglia" in prompt_lower:
-            title = "Focus Soglia e Ritmo Medio"
-        elif "progressivo" in prompt_lower:
-            title = "Corsa Progressiva Guidata"
-        elif "ripetute" in prompt_lower or "intervalli" in prompt_lower:
-            title = "Intervalli & Fartlek"
+        title = "Custom Guided Running Workout"
+        if "soglia" in prompt_lower or "threshold" in prompt_lower or "tempo" in prompt_lower:
+            title = "Threshold & Tempo Focus Run"
+        elif "progressivo" in prompt_lower or "progressive" in prompt_lower:
+            title = "Progressive Tempo Run"
+        elif "ripetute" in prompt_lower or "interval" in prompt_lower or "fartlek" in prompt_lower:
+            title = "Interval & Fartlek Workout"
 
         return WorkoutRequest(
             workout_title=title,
@@ -342,7 +342,7 @@ class LLMCoach:
         intensity: str
     ) -> str:
         """
-        Generate Italian coaching phrase for a single cue.
+        Generate English/Italian coaching phrase for a single cue.
         """
         _, _, _, api_key = self._get_provider_info()
         provider = settings.LLM_PROVIDER.lower().strip()
@@ -351,9 +351,9 @@ class LLMCoach:
             try:
                 system_prompt = SCRIPT_SYSTEM_PROMPT.format(coach_persona=persona)
                 user_msg = (
-                    f"Segmento: {segment_name} (Intensità: {intensity}, Passo target: {target_pace or 'N/A'})\n"
-                    f"Obiettivo cue: {intent}\n"
-                    f"Genera la frase esatta che dirai al runner."
+                    f"Segment: {segment_name} (Intensity: {intensity}, Target pace: {target_pace or 'N/A'})\n"
+                    f"Cue goal: {intent}\n"
+                    f"Generate the exact spoken sentence you will say to the runner."
                 )
                 text = self._call_llm(system_prompt, user_msg, force_json=False)
                 clean = text.strip().strip('"').strip("'")
@@ -362,34 +362,34 @@ class LLMCoach:
             except Exception as e:
                 logger.debug("LLM cue script generation error: %s. Using heuristic template.", e)
 
-        # Fallback Italian Script Generator
+        # Fallback Script Generator
         intent_lower = intent.lower()
-        pace_str = f" a {target_pace}" if target_pace else ""
+        pace_str = f" at {target_pace}" if target_pace else ""
 
-        if "benvenuto" in intent_lower or "avvio" in intent_lower or "inizio" in intent_lower:
+        if any(w in intent_lower for w in ["benvenuto", "welcome", "avvio", "start", "inizio"]):
             if persona == "militare_severo":
-                return f"Si comincia! Partiamo con {segment_name}{pace_str}. Concentrati e non distrarti!"
+                return f"Let's move! Starting with {segment_name}{pace_str}. Stay disciplined, eyes ahead!"
             elif persona == "calmo_mindful":
-                return f"Ciao runner. Iniziamo con {segment_name}{pace_str}. Ascolta il tuo respiro e trova fluidità."
+                return f"Welcome runner. Beginning {segment_name}{pace_str}. Find your rhythm and breathe easy."
             else:
-                return f"Ciao runner! Iniziamo con {segment_name}{pace_str}. Spalle rilassate, postura alta e buona corsa!"
+                return f"Welcome runner! Let's kick off with {segment_name}{pace_str}. Relax your shoulders and enjoy the run!"
 
-        elif "metà" in intent_lower or "postura" in intent_lower:
+        elif any(w in intent_lower for w in ["metà", "halfway", "postura", "posture"]):
             if persona == "militare_severo":
-                return "Siamo a metà! Mantieni la cadenza, niente cali di ritmo, spingi con le caviglie!"
+                return "Halfway mark! Maintain your cadence, drive through the ankles, no slowing down!"
             else:
-                return "Siamo esattamente a metà blocco. Controlla le spalle e la respirazione: ritmo perfetto, continua così!"
+                return "You are halfway through this block. Check your posture and breathing: rhythm is spot on, keep going!"
 
-        elif "preavviso" in intent_lower or "30 secondi" in intent_lower or "tra poco" in intent_lower:
-            return "Attenzione runner, ultimi 30 secondi in questo blocco. Preparati al prossimo cambio di ritmo."
+        elif any(w in intent_lower for w in ["preavviso", "30 second", "30 secondi", "tra poco", "soon"]):
+            return "Attention runner, final 30 seconds in this block. Prepare for the upcoming pace change."
 
-        elif "fine" in intent_lower or "conclusione" in intent_lower or "ottimo" in intent_lower:
+        elif any(w in intent_lower for w in ["fine", "conclusione", "finish", "complete", "ottimo", "great"]):
             if persona == "militare_severo":
-                return "Stop! Allenamento completato con determinazione. Ottimo lavoro, ora recupera."
+                return "Halt! Workout finished with dedication. Mission accomplished, now recover."
             else:
-                return "Allenamento concluso con successo! Ottima gestione delle energie. Fai qualche minuto di stretching."
+                return "Workout complete! Fantastic effort and energy today. Walk it out and enjoy your recovery."
 
-        return f"{intent}. Mantieni il ritmo{pace_str} e concentrati sul movimento."
+        return f"{intent}. Hold your rhythm{pace_str} and stay focused on your movement."
 
 
 # Singleton LLM coach instance
