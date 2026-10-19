@@ -43,22 +43,30 @@ Expected JSON structure:
 }
 
 Key rules:
-1. `coach_cues` must contain at least 1 cue at the start of each segment (offset_sec ~5s) and 1 preview cue before ending if segment > 3 minutes.
+1. `coach_cues` placement:
+   - Segment start (offset_sec ~5s): Announce segment goal, target pace and mindset.
+   - Periodic cues: In any segment longer than 3 minutes, schedule a coaching cue EVERY 120 TO 180 SECONDS (every 2-3 minutes maximum). Alternate topics:
+     * Posture & Form (relax shoulders, gaze forward at horizon, compact arm swing).
+     * Cadence & Footstrike (quick light steps, 170-180 SPM, landing under hips).
+     * Breathing (deep diaphragmatic rhythm, exhaling fully to clear fatigue).
+     * Effort Check (confirming perceived exertion matches the current intensity zone).
+   - Segment warning (offset_sec ~30s before segment duration): Alert runner of upcoming pace change.
 2. `target_bpm_range` must align with intensity: low -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
 3. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
 4. Output ONLY the valid JSON object, without markdown formatting or surrounding conversational text.
 """
 
 SCRIPT_SYSTEM_PROMPT = """You are the voice of the running coach in the runner's headphones during a guided workout.
-Generate the exact spoken text for this coaching cue.
+Generate the exact spoken text for this coaching cue IN ITALIAN.
 
 Style guidelines:
+- Language: ITALIAN ONLY.
 - Persona: {coach_persona}
   * 'tecnico_motivazionale': professional, encouraging, focused on cadence, breathing, and tall posture.
   * 'calmo_mindful': relaxed, mindful, focused on bodily sensations and deep fluid breathing.
   * 'militare_severo': energetic, disciplined, no excuses, high cadence, push through the fatigue.
-- Length: concise (1 to 3 short sentences, under 35 words) so background music stays prominent.
-- Output ONLY the spoken text, without quotation marks or explanations.
+- Length: concise (1 to 2 short sentences, 15 to 30 words) so background music stays prominent.
+- Output ONLY the spoken Italian text, without quotation marks or explanations.
 """
 
 
@@ -233,12 +241,99 @@ class LLMCoach:
                     clean_json = clean_json[start_idx:end_idx+1]
 
                 data = json.loads(clean_json)
-                return WorkoutRequest(**data)
+                parsed = WorkoutRequest(**data)
+                return self._ensure_regular_cue_cadence(parsed)
             except Exception as e:
                 logger.warning("LLM parser failed: %s. Using heuristic fallback parser.", e)
 
         # Fallback Heuristic Parser
-        return self._heuristic_parse(prompt, coach_persona)
+        heuristic_workout = self._heuristic_parse(prompt, coach_persona)
+        return self._ensure_regular_cue_cadence(heuristic_workout)
+
+    def _ensure_regular_cue_cadence(self, workout: WorkoutRequest) -> WorkoutRequest:
+        """
+        Guarantees that no gap between coach interventions exceeds 150-180 seconds (2.5-3 minutes).
+        Automatically injects contextual cues (posture, breathing, cadence, effort check)
+        tailored to each segment's intensity.
+        """
+        periodic_cues_by_intensity = {
+            "low": [
+                ("respiro", "Controllo respiro: inspira profondamente con il naso ed espira con la bocca, ritmo fluido e rilassato."),
+                ("postura", "Check postura: busto eretto, spalle morbide e sguardo dritto avanti a te."),
+                ("cadenza", "Frequenza passi: concentrati su appoggi leggeri e agili, senza sforzare."),
+                ("ritmo", "Mantieni questo passo blando, ideale per ossigenare i muscoli e costruire la base aerobica.")
+            ],
+            "medium": [
+                ("postura", "Check postura: rilassa le spalle, tieni i gomiti vicini al corpo e il busto leggermente proiettato in avanti."),
+                ("respiro", "Controllo respiro: trova una respirazione diaframmatica ritmica e costante con i tuoi passi."),
+                ("cadenza", "Cadenza: punta a centoottanta passi al minuto, appoggio reattivo sotto il bacino senza allungare la falcata."),
+                ("sforzo", "Verifica sforzo: sei in piena Zona Due, devi riuscire a parlare senza andare in debito d'ossigeno.")
+            ],
+            "high": [
+                ("cadenza", "Spinta e frequenza: mantieni i passi rapidi e scattanti, non cedere di un solo secondo!"),
+                ("respiro", "Respiro profondo: espira con decisione per ripulire l'acido lattico e ossigenare le gambe."),
+                ("postura", "Postura forte: spalle aperte per aprire la cassa toracica, braccia decise che danno il ritmo."),
+                ("motivazione", "Sei nel cuore del ritmo gara! Concentrazione totale, tieni duro e cavalca la musica.")
+            ],
+            "max": [
+                ("massimale", "Tutto quello che hai! Spingi con le braccia, sguardo alto e scarica tutta l'energia a terra!"),
+                ("respiro", "Espira con forza, tieni alta la frequenza e non mollare nemmeno un metro!"),
+                ("determinazione", "Mancano pochi secondi, dai fondo alle riserve e chiudi questo sprint al massimo!")
+            ]
+        }
+
+        for segment in workout.segments:
+            seg_dur = segment.duration_sec
+            if seg_dur < 120:
+                continue
+
+            existing_cues = sorted(segment.coach_cues, key=lambda c: c.offset_sec)
+            offsets = [c.offset_sec for c in existing_cues]
+
+            # Ensure start cue exists
+            if not offsets or offsets[0] > 30:
+                existing_cues.insert(0, CoachCue(
+                    offset_sec=5,
+                    intent=f"Inizio {segment.name}: imposta il ritmo a {segment.target_pace or 'ritmo target'}"
+                ))
+
+            # Ensure end-warning cue exists (30s before end)
+            if seg_dur > 180 and (not offsets or (seg_dur - offsets[-1]) > 55):
+                existing_cues.append(CoachCue(
+                    offset_sec=max(10, seg_dur - 30),
+                    intent=f"Attenzione: mancano trenta secondi alla fine di {segment.name}, preparati al cambio di ritmo"
+                ))
+
+            existing_cues.sort(key=lambda c: c.offset_sec)
+
+            # Detect any gap > 180 seconds and insert periodic cues every ~140s
+            filled_cues: List[CoachCue] = []
+            pool = periodic_cues_by_intensity.get(segment.intensity.lower(), periodic_cues_by_intensity["medium"])
+            cue_idx = 0
+
+            for i in range(len(existing_cues)):
+                curr_cue = existing_cues[i]
+                if filled_cues:
+                    prev_offset = filled_cues[-1].offset_sec
+                    gap = curr_cue.offset_sec - prev_offset
+                    while gap > 180:
+                        interp_offset = prev_offset + 140
+                        if interp_offset >= curr_cue.offset_sec - 35:
+                            break
+                        _, cue_intent = pool[cue_idx % len(pool)]
+                        cue_idx += 1
+                        filled_cues.append(CoachCue(
+                            offset_sec=interp_offset,
+                            intent=cue_intent
+                        ))
+                        prev_offset = interp_offset
+                        gap = curr_cue.offset_sec - prev_offset
+
+                filled_cues.append(curr_cue)
+
+            segment.coach_cues = filled_cues
+
+        return workout
 
     def _heuristic_parse(self, prompt: str, persona: str) -> WorkoutRequest:
         """
@@ -362,34 +457,54 @@ class LLMCoach:
             except Exception as e:
                 logger.debug("LLM cue script generation error: %s. Using heuristic template.", e)
 
-        # Fallback Script Generator
+        # Fallback Script Generator in Italian
         intent_lower = intent.lower()
-        pace_str = f" at {target_pace}" if target_pace else ""
+        pace_str = f" a {target_pace}" if target_pace else ""
 
         if any(w in intent_lower for w in ["benvenuto", "welcome", "avvio", "start", "inizio"]):
             if persona == "militare_severo":
-                return f"Let's move! Starting with {segment_name}{pace_str}. Stay disciplined, eyes ahead!"
+                return f"Si parte! Iniziamo con {segment_name}{pace_str}. Concentrazione massima, sguardo avanti e mantieni la cadenza!"
             elif persona == "calmo_mindful":
-                return f"Welcome runner. Beginning {segment_name}{pace_str}. Find your rhythm and breathe easy."
+                return f"Benvenuto runner. Iniziamo con {segment_name}{pace_str}. Trova il tuo ritmo e respira in modo fluido e rilassato."
             else:
-                return f"Welcome runner! Let's kick off with {segment_name}{pace_str}. Relax your shoulders and enjoy the run!"
+                return f"Ciao runner! Si parte con {segment_name}{pace_str}. Rilassa le spalle, appoggio reattivo sotto il bacino e goditi la corsa!"
 
-        elif any(w in intent_lower for w in ["metà", "halfway", "postura", "posture"]):
+        elif any(w in intent_lower for w in ["postura", "posture", "spalle"]):
             if persona == "militare_severo":
-                return "Halfway mark! Maintain your cadence, drive through the ankles, no slowing down!"
+                return "Assetto da corsa! Spalle basse, busto saldo, gomiti a novanta gradi e sguardo dritto all'orizzonte!"
+            elif persona == "calmo_mindful":
+                return "Senti il tuo corpo: decontrai il collo, rilassa i muscoli del viso e mantieni la schiena piacevolmente allungata."
             else:
-                return "You are halfway through this block. Check your posture and breathing: rhythm is spot on, keep going!"
+                return "Check postura: busto eretto, spalle morbide e gomiti compatti. Una corsa rilassata è una corsa efficiente!"
+
+        elif any(w in intent_lower for w in ["respiro", "respirazione", "breath"]):
+            if persona == "calmo_mindful":
+                return "Focalizzati sul respiro: inspira aria fresca e riempi la pancia, espira a fondo liberando ogni tensione."
+            else:
+                return "Ascolta il respiro: trova un ritmo regolare due-due con i tuoi passi. Espira a fondo per ossigenare le gambe."
+
+        elif any(w in intent_lower for w in ["cadenza", "frequenza", "passi"]):
+            if persona == "militare_severo":
+                return "Accorcia la falcata e alza la frequenza! Passi rapidi ed elastici sul terreno, nessun rimbalzo inutile!"
+            else:
+                return "Concentrati sulla cadenza: passi brevi, leggeri e frequenti. Immagina di correre sul velluto."
+
+        elif any(w in intent_lower for w in ["metà", "halfway", "sforzo", "ritmo", "zona"]):
+            if persona == "militare_severo":
+                return "Metà blocco completato! La fatica sale ma la determinazione non cala, spingi con grinta!"
+            else:
+                return "Sei a metà di questa fase. Il ritmo è ottimo e costante: gestisci le energie con intelligenza."
 
         elif any(w in intent_lower for w in ["preavviso", "30 second", "30 secondi", "tra poco", "soon"]):
-            return "Attention runner, final 30 seconds in this block. Prepare for the upcoming pace change."
+            return f"Attenzione runner, ultimi trenta secondi in questa fase. Preparati mentalmente al cambio di ritmo!"
 
         elif any(w in intent_lower for w in ["fine", "conclusione", "finish", "complete", "ottimo", "great"]):
             if persona == "militare_severo":
-                return "Halt! Workout finished with dedication. Mission accomplished, now recover."
+                return "Alt! Allenamento portato a termine con successo. Ottima disciplina, ora cammina e recupera."
             else:
-                return "Workout complete! Fantastic effort and energy today. Walk it out and enjoy your recovery."
+                return "Allenamento concluso! Grandissimo impegno oggi, hai dato il massimo. Rallenta il passo e goditi il recupero."
 
-        return f"{intent}. Hold your rhythm{pace_str} and stay focused on your movement."
+        return f"{intent}. Mantieni il ritmo{pace_str} e concentrati sul tuo movimento."
 
 
 # Singleton LLM coach instance
