@@ -14,14 +14,17 @@ logger = logging.getLogger(__name__)
 WORKOUT_SYSTEM_PROMPT = """You are an expert running coach and athletics trainer.
 Your job is to convert a natural language workout description into a strict, validated JSON specification for an audio-guided workout.
 
+CRITICAL REQUIREMENT:
+All user-facing titles, segment names, cue intents, and coaching speech MUST BE IN NATURAL ITALIAN, because the neural voice synthesizers (Piper and Kokoro) are strictly Italian models. Do not use English for workout titles, segment names, or cue intents.
+
 Expected JSON structure:
 {
-  "workout_title": "Descriptive Workout Title",
+  "workout_title": "Corsa Progressiva con Variazioni di Ritmo",
   "coach_persona": "tecnico_motivazionale",
   "total_duration_sec": 2700,
   "segments": [
     {
-      "name": "Progressive Warmup",
+      "name": "Riscaldamento Progressivo",
       "duration_sec": 600,
       "intensity": "low",
       "target_bpm_range": [115, 130],
@@ -29,12 +32,17 @@ Expected JSON structure:
       "coach_cues": [
         {
           "offset_sec": 5,
-          "intent": "Welcome runner, explain workout structure and start easy jog.",
+          "intent": "Benvenuto runner, spieghiamo la sessione e avviamo una corsa leggera di riscaldamento.",
+          "spoken_text": null
+        },
+        {
+          "offset_sec": 180,
+          "intent": "Check postura: spalle rilassate, busto eretto e respirazione sciolta.",
           "spoken_text": null
         },
         {
           "offset_sec": 570,
-          "intent": "Warmup ending soon: 30 seconds until the main tempo block.",
+          "intent": "Preavviso fine riscaldamento: 30 secondi al cambio ritmo verso il blocco centrale.",
           "spoken_text": null
         }
       ]
@@ -43,21 +51,25 @@ Expected JSON structure:
 }
 
 Key rules:
-1. `coach_cues` placement:
-   - Segment start (offset_sec ~5s): Announce segment goal, target pace and mindset.
+1. Language: Strictly ITALIAN for `workout_title`, `segment.name`, `intent`, and `spoken_text`.
+2. `coach_cues` placement:
+   - Segment start (offset_sec ~5s): Announce segment goal, target pace and mindset in Italian.
    - Periodic cues: In any segment longer than 3 minutes, schedule a coaching cue EVERY 120 TO 180 SECONDS (every 2-3 minutes maximum). Alternate topics:
-     * Posture & Form (relax shoulders, gaze forward at horizon, compact arm swing).
-     * Cadence & Footstrike (quick light steps, 170-180 SPM, landing under hips).
-     * Breathing (deep diaphragmatic rhythm, exhaling fully to clear fatigue).
-     * Effort Check (confirming perceived exertion matches the current intensity zone).
-   - Segment warning (offset_sec ~30s before segment duration): Alert runner of upcoming pace change.
-2. `target_bpm_range` must align with intensity: low -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
-3. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
-4. Output ONLY the valid JSON object, without markdown formatting or surrounding conversational text.
+     * Postura e Assetto (rilassare le spalle, sguardo all'orizzonte, oscillazione gomiti compatta).
+     * Cadenza e Appoggio (passi rapidi e leggeri, 170-180 SPM, appoggio sotto il bacino).
+     * Respirazione (ritmo costante e profondo, espirazione completa).
+     * Gestione dello Sforzo (percezione della fatica adeguata alla zona d'intensità).
+   - Segment warning (offset_sec ~30s before segment duration): Alert runner of upcoming pace change in Italian.
+3. `target_bpm_range` must align with intensity: low -> [115, 130], medium -> [130, 150], high/threshold -> [150, 175], max/sprint -> [170, 190].
+4. `total_duration_sec` must strictly equal the sum of all segment `duration_sec`.
+5. Output ONLY the valid JSON object, without markdown formatting or surrounding conversational text.
 """
 
 SCRIPT_SYSTEM_PROMPT = """You are the voice of the running coach in the runner's headphones during a guided workout.
-Generate the exact spoken text for this coaching cue IN ITALIAN.
+Generate the exact spoken text for this coaching cue IN NATURAL ITALIAN.
+
+CRITICAL:
+The voice synthesizers are Italian neural models (Piper / Kokoro). Output ONLY natural, motivating spoken Italian text. Never output English text.
 
 Style guidelines:
 - Language: ITALIAN ONLY.
@@ -353,54 +365,75 @@ class LLMCoach:
             durations = [w_time, m_time, c_time]
 
         # Build Warmup segment
+        warmup_dur = durations[0]
+        warmup_cues = [
+            CoachCue(offset_sec=5, intent="Benvenuto runner, iniziamo con una corsa facile e postura rilassata"),
+            CoachCue(offset_sec=max(10, warmup_dur - 30), intent="Preavviso: mancano 30 secondi all'inizio del blocco centrale")
+        ]
+        if warmup_dur >= 360:
+            warmup_cues.insert(1, CoachCue(offset_sec=180, intent="Check postura e spalle rilassate per riscaldare il corpo"))
+
         segments.append(Segment(
-            name="Progressive Warmup",
-            duration_sec=durations[0],
+            name="Riscaldamento Progressivo",
+            duration_sec=warmup_dur,
             intensity="low",
             target_bpm_range=(118, 128),
             target_pace="5:45/km",
-            coach_cues=[
-                CoachCue(offset_sec=5, intent="Welcome runner, start easy jog with tall posture"),
-                CoachCue(offset_sec=max(10, durations[0] - 30), intent="Notice: 30 seconds until the main workout block")
-            ]
+            coach_cues=warmup_cues
         ))
 
         # Build Central segment
+        central_dur = durations[1]
+        central_cues = [
+            CoachCue(offset_sec=5, intent="Inizio blocco principale: trova il tuo ritmo e stabilizza la respirazione")
+        ]
+        # Periodic cues every 150-180 seconds
+        periodic_topics = [
+            "Controllo cadenza e frequenza dei passi rapidi sotto il bacino",
+            "Controllo respirazione diaframmatica ed espirazione profonda",
+            "Assetto da corsa: busto leggermente proteso e spalle sciolte",
+            "Metà blocco completato: verifica dello sforzo e gestione delle energie"
+        ]
+        curr_offset = 180
+        t_idx = 0
+        while curr_offset < central_dur - 60:
+            central_cues.append(CoachCue(offset_sec=curr_offset, intent=periodic_topics[t_idx % len(periodic_topics)]))
+            curr_offset += 180
+            t_idx += 1
+
+        central_cues.append(CoachCue(offset_sec=max(10, central_dur - 30), intent="Preavviso: ultimi 30 secondi di sforzo prima del defaticamento"))
+
         segments.append(Segment(
-            name="Main Workout Block",
-            duration_sec=durations[1],
+            name="Blocco Centrale",
+            duration_sec=central_dur,
             intensity="medium",
             target_bpm_range=(135, 150),
             target_pace="4:50/km",
-            coach_cues=[
-                CoachCue(offset_sec=5, intent="Start main block: lock in your target cadence and steady breathing"),
-                CoachCue(offset_sec=max(20, int(durations[1] / 2)), intent="Halfway through block: check shoulders and arm swing"),
-                CoachCue(offset_sec=max(10, durations[1] - 30), intent="Final 30 seconds: hold your form strong before recovery")
-            ]
+            coach_cues=central_cues
         ))
 
         # Build Cooldown segment
         cooldown_dur = durations[2] if len(durations) > 2 else 300
         segments.append(Segment(
-            name="Recovery Cooldown",
+            name="Defaticamento Finale",
             duration_sec=cooldown_dur,
             intensity="low",
             target_bpm_range=(110, 125),
             target_pace="6:00/km",
             coach_cues=[
-                CoachCue(offset_sec=5, intent="Great work today, bring your heart rate down with an easy jog"),
-                CoachCue(offset_sec=max(10, cooldown_dur - 20), intent="Workout complete: summary and recovery cooldown")
+                CoachCue(offset_sec=5, intent="Ottimo lavoro! Rallenta il ritmo e inizia il defaticamento a corsa sciolta"),
+                CoachCue(offset_sec=max(10, cooldown_dur - 20), intent="Allenamento concluso con successo: complimenti e recupero camminando")
             ]
         ))
 
         total_sec = sum(s.duration_sec for s in segments)
-        title = "Custom Guided Running Workout"
+        title = "Allenamento Guidato di Corsa"
         if "soglia" in prompt_lower or "threshold" in prompt_lower or "tempo" in prompt_lower:
-            title = "Threshold & Tempo Focus Run"
+            title = "Corsa a Ritmo Medio e Soglia"
         elif "progressivo" in prompt_lower or "progressive" in prompt_lower:
-            title = "Progressive Tempo Run"
+            title = "Corsa a Ritmo Progressivo"
         elif "ripetute" in prompt_lower or "interval" in prompt_lower or "fartlek" in prompt_lower:
-            title = "Interval & Fartlek Workout"
+            title = "Ripetute e Variazioni di Ritmo"
 
         return WorkoutRequest(
             workout_title=title,

@@ -112,7 +112,7 @@ class AudioMixer:
             track_durations = []
             for p in current_tracks:
                 try:
-                    d = self._get_duration_sec(p)
+                    d = self.get_audio_duration_sec(p)
                 except Exception:
                     d = 180.0
                 track_durations.append(d)

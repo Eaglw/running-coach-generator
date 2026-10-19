@@ -25,10 +25,24 @@ class RSSGenerator:
         base_url: Optional[str] = None
     ) -> None:
         self.podcast_dir = podcast_dir or settings.PODCAST_DIR
-        self.base_url = (base_url or settings.BASE_URL).rstrip("/")
+        self._custom_base_url = base_url
         self.feed_path = self.podcast_dir / "feed.xml"
         self.metadata_path = self.podcast_dir / "episodes.json"
         self.podcast_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def base_url(self) -> str:
+        return (self._custom_base_url or settings.BASE_URL).rstrip("/")
+
+    def refresh_episodes_and_regenerate(self) -> Path:
+        """
+        Update enclosure_url of all stored episodes to match current base_url and regenerate feed.xml.
+        """
+        episodes = self._load_episodes_metadata()
+        for ep in episodes:
+            ep.enclosure_url = f"{self.base_url}/podcast/episodes/{ep.filename}"
+        self._save_episodes_metadata(episodes)
+        return self.generate_feed(episodes)
 
     def _load_episodes_metadata(self) -> List[EpisodeMetadata]:
         """Load stored episodes metadata from JSON catalog."""

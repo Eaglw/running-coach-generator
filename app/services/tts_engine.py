@@ -158,16 +158,54 @@ class KokoroTTSEngine(BaseTTSEngine):
         # Standard Kokoro v1.0 Italian voices: 'im_nicola' or 'if_sara'
         self.voice_name = voice_name or settings.TTS_VOICE or "im_nicola"
 
+    def _ensure_kokoro_models(self) -> Tuple[Optional[Path], Optional[Path]]:
+        """
+        Ensure kokoro-v1.0.onnx and voices-v1.0.bin are downloaded in settings.CACHE_DIR / 'tts_models'.
+        Downloads from official GitHub release if missing.
+        """
+        models_dir = settings.CACHE_DIR / "tts_models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_file = models_dir / "kokoro-v1.0.onnx"
+        voices_file = models_dir / "voices-v1.0.bin"
+
+        if model_file.exists() and voices_file.exists():
+            return model_file, voices_file
+
+        base_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+        files_to_download = [
+            ("kokoro-v1.0.onnx", model_file),
+            ("voices-v1.0.bin", voices_file),
+        ]
+
+        try:
+            import requests
+            for fname, target_path in files_to_download:
+                if not target_path.exists():
+                    url = f"{base_url}/{fname}"
+                    logger.info("Downloading Kokoro neural TTS model '%s'...", fname)
+                    resp = requests.get(url, stream=True, timeout=120)
+                    if resp.status_code == 200:
+                        tmp_target = target_path.with_suffix(f"{target_path.suffix}.tmp")
+                        with open(tmp_target, "wb") as f:
+                            for chunk in resp.iter_content(chunk_size=65536):
+                                if chunk:
+                                    f.write(chunk)
+                        tmp_target.replace(target_path)
+                        logger.info("Downloaded %s successfully.", target_path.name)
+                    else:
+                        logger.warning("Failed to download Kokoro file %s (HTTP %d)", url, resp.status_code)
+                        return None, None
+            return model_file, voices_file
+        except Exception as e:
+            logger.warning("Auto-download of Kokoro ONNX model failed: %s", e)
+            return None, None
+
     def synthesize(self, text: str, output_wav_path: Path) -> Path:
         output_wav_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             import kokoro_onnx  # type: ignore
-            # Models directory
-            models_dir = settings.CACHE_DIR / "tts_models"
-            model_file = models_dir / "kokoro-v1.0.onnx"
-            voices_file = models_dir / "voices-v1.0.bin"
-
-            if model_file.exists() and voices_file.exists():
+            model_file, voices_file = self._ensure_kokoro_models()
+            if model_file and voices_file and model_file.exists() and voices_file.exists():
                 if KokoroTTSEngine._kokoro_instance_cache is None:
                     logger.info("Loading Kokoro ONNX model into memory...")
                     KokoroTTSEngine._kokoro_instance_cache = kokoro_onnx.Kokoro(str(model_file), str(voices_file))
@@ -177,7 +215,7 @@ class KokoroTTSEngine(BaseTTSEngine):
                 sf.write(str(output_wav_path), samples, sample_rate)
                 return output_wav_path
         except Exception as e:
-            logger.debug("Kokoro ONNX not available (%s). Falling back to Piper neural voice.", e)
+            logger.warning("Kokoro ONNX synthesis failed (%s). Falling back to Piper neural voice.", e)
 
         # If Kokoro models are not installed locally, fallback to Piper neural voice
         return PiperTTSEngine().synthesize(text, output_wav_path)

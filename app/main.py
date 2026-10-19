@@ -352,6 +352,12 @@ async def update_settings(updates: Dict[str, Any]):
     }
     filtered = {k: v for k, v in updates.items() if k in allowed}
     settings.save_dynamic_settings(filtered)
+    if "BASE_URL" in filtered or "PODCAST_TITLE" in filtered:
+        try:
+            rss_generator.refresh_episodes_and_regenerate()
+            logger.info("Regenerated podcast RSS feed with updated BASE_URL/title: %s", settings.BASE_URL)
+        except Exception as e:
+            logger.warning("Failed to refresh RSS feed on settings update: %s", e)
     return {"message": "Settings updated and saved successfully.", "settings": await get_active_settings()}
 
 

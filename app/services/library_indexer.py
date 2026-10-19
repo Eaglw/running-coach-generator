@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from pydantic import BaseModel
@@ -58,13 +59,14 @@ class LibraryIndexer:
         return Path(self._custom_music_dir or settings.MUSIC_DIR)
 
     def load_cache(self) -> None:
-        """Load indexed tracks from JSON cache if available."""
+        """Load indexed tracks from JSON cache if available, filtering out _Serato_ and short files (<60s)."""
         if self.cache_path.exists():
             try:
                 with open(self.cache_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self._tracks = {
                         k: TrackMetadata(**v) for k, v in data.items()
+                        if "_serato_" not in k.lower() and v.get("duration_sec", 0.0) >= 60.0
                     }
                 logger.info("Loaded %d tracks from library index cache.", len(self._tracks))
             except Exception as e:
@@ -132,51 +134,73 @@ class LibraryIndexer:
 
         return title, artist, duration_sec, bpm
 
-    def _compute_fallback_bpm(self, file_path: Path, duration_sec: float) -> int:
+    def _compute_fallback_bpm(self, file_path: Path, duration_sec: float) -> Tuple[int, str]:
         """
-        Calculate BPM using librosa analyzing a 60-second middle slice of the audio file.
+        Calculate BPM using ffmpeg to decode a 60-second middle slice to raw PCM float32,
+        then analyze with librosa.beat.beat_track(start_bpm=128.0).
+        Returns (bpm, bpm_source).
         """
+        target_slice_duration = 60.0
+        if duration_sec > target_slice_duration:
+            offset = max(0.0, (duration_sec - target_slice_duration) / 2.0)
+        else:
+            offset = 0.0
+            target_slice_duration = max(5.0, duration_sec)
+
         try:
             import librosa
-            # Analyze a 60-second middle slice for optimal speed and accuracy
-            target_slice_duration = 60.0
-            if duration_sec > target_slice_duration:
-                offset = max(0.0, (duration_sec - target_slice_duration) / 2.0)
-            else:
-                offset = 0.0
-                target_slice_duration = duration_sec if duration_sec > 0 else None
 
-            y, sr = librosa.load(
-                str(file_path),
-                offset=offset,
-                duration=target_slice_duration,
-                sr=22050,
-                mono=True
+            cmd = [
+                "ffmpeg", "-v", "error",
+                "-ss", str(offset),
+                "-t", str(target_slice_duration),
+                "-i", str(file_path),
+                "-f", "f32le",
+                "-ac", "1",
+                "-ar", "22050",
+                "-"
+            ]
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
             )
-            if len(y) == 0:
-                return 120  # Default fallback tempo
+            if not result.stdout or len(result.stdout) < 22050 * 4:
+                logger.warning("Decoded slice for %s is empty or too short. Returning fallback default BPM.", file_path.name)
+                return 120, "fallback_default"
 
-            tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-            # Handle float or scalar numpy array
+            y = np.frombuffer(result.stdout, dtype=np.float32)
+            tempo, _ = librosa.beat.beat_track(y=y, sr=22050, start_bpm=128.0)
+
             if hasattr(tempo, "__iter__"):
                 computed = float(tempo[0])
             else:
                 computed = float(tempo)
 
             bpm = int(round(computed))
-            return max(60, min(bpm, 220))
+            return max(60, min(bpm, 220)), "librosa_analysis"
+        except ImportError as ie:
+            logger.info("librosa not installed (%s). Using fallback 120 BPM.", ie)
+            return 120, "fallback_default"
         except Exception as e:
-            logger.warning("librosa BPM analysis failed for %s: %s. Using default 120 BPM.", file_path.name, e)
-            return 120
+            logger.warning("librosa BPM analysis failed for %s: %s. Using fallback default 120 BPM.", file_path.name, e)
+            return 120, "fallback_default"
 
     def scan_library(self, force_rescan: bool = False) -> List[TrackMetadata]:
         """
         Scan music_dir for audio files, extract tags and calculate missing BPMs.
+        Skips _Serato_ folders and audio files shorter than 60 seconds.
         """
         discovered_paths: Set[str] = set()
         updated = False
 
-        for root, _, files in os.walk(self.music_dir):
+        for root, dirs, files in os.walk(self.music_dir):
+            # Exclude _Serato_ folders completely from tree traversal
+            dirs[:] = [d for d in dirs if "_serato_" not in d.lower()]
+            if "_serato_" in root.lower():
+                continue
+
             for file in files:
                 ext = Path(file).suffix.lower()
                 if ext in AUDIO_EXTENSIONS:
@@ -187,17 +211,11 @@ class LibraryIndexer:
 
                     # Check if already indexed and up to date
                     if not force_rescan and path_str in self._tracks:
-                        if abs(self._tracks[path_str].mtime - mtime) < 1.0:
+                        cached = self._tracks[path_str]
+                        if abs(cached.mtime - mtime) < 1.0 and cached.bpm_source != "fallback_default":
                             continue
 
-                    logger.info("Indexing track: %s", file_path.name)
                     title, artist, duration, bpm = self._extract_id3_metadata(file_path)
-
-                    if bpm is not None and bpm > 0:
-                        bpm_source = "id3"
-                    else:
-                        bpm = self._compute_fallback_bpm(file_path, duration)
-                        bpm_source = "librosa_analysis"
 
                     # If duration was not found via ID3, compute duration
                     if duration <= 0:
@@ -206,7 +224,27 @@ class LibraryIndexer:
                             info = sf.info(str(file_path))
                             duration = float(info.duration)
                         except Exception:
-                            duration = 180.0  # Safe fallback estimate
+                            try:
+                                cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(file_path)]
+                                r = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, check=True)
+                                duration = float(r.stdout.strip())
+                            except Exception:
+                                duration = 180.0
+
+                    # Filter out short DJ samples / sound effects (< 60s)
+                    if duration < 60.0:
+                        logger.debug("Skipping short audio sample (< 60s): %s (%.1fs)", file_path.name, duration)
+                        if path_str in self._tracks:
+                            del self._tracks[path_str]
+                            updated = True
+                        continue
+
+                    logger.info("Indexing track: %s (%.1fs)", file_path.name, duration)
+
+                    if bpm is not None and bpm > 0:
+                        bpm_source = "id3"
+                    else:
+                        bpm, bpm_source = self._compute_fallback_bpm(file_path, duration)
 
                     track = TrackMetadata(
                         path=path_str,
@@ -221,10 +259,10 @@ class LibraryIndexer:
                     self._tracks[path_str] = track
                     updated = True
 
-        # Prune deleted tracks from cache
+        # Prune deleted tracks, _Serato_ folders, or short tracks from cache
         current_keys = list(self._tracks.keys())
         for k in current_keys:
-            if k not in discovered_paths:
+            if k not in discovered_paths or "_serato_" in k.lower() or self._tracks[k].duration_sec < 60.0:
                 del self._tracks[k]
                 updated = True
 
@@ -245,7 +283,7 @@ class LibraryIndexer:
         Track selection algorithm:
         Picks tracks matching each segment's target_bpm_range (with ±5% tolerance or
         half/double-time fallback) to cover segment.duration_sec,
-        strictly avoiding duplicate tracks in the same workout.
+        strictly avoiding duplicate tracks and identical song titles in the same workout.
         Returns a list of tuples: [(segment_duration_sec, [track_path_1, track_path_2, ...]), ...]
         """
         all_tracks = self.get_tracks()
@@ -257,6 +295,15 @@ class LibraryIndexer:
 
         result: List[Tuple[int, List[Path]]] = []
         used_paths: Set[str] = set()
+        used_song_keys: Set[Tuple[str, str]] = set()
+
+        def is_available(t: TrackMetadata) -> bool:
+            if t.path in used_paths:
+                return False
+            key = (t.title.strip().lower(), t.artist.strip().lower())
+            if key in used_song_keys:
+                return False
+            return True
 
         for segment in segments:
             min_bpm, max_bpm = segment.target_bpm_range
@@ -267,7 +314,7 @@ class LibraryIndexer:
             # 1. Strict match: tracks in [min_bpm, max_bpm]
             candidates = [
                 t for t in all_tracks
-                if t.path not in used_paths and min_bpm <= t.bpm <= max_bpm
+                if is_available(t) and min_bpm <= t.bpm <= max_bpm
             ]
 
             # 2. Tolerance match (±5%)
@@ -276,14 +323,14 @@ class LibraryIndexer:
                 tol_max = int(max_bpm * 1.05)
                 candidates = [
                     t for t in all_tracks
-                    if t.path not in used_paths and tol_min <= t.bpm <= tol_max
+                    if is_available(t) and tol_min <= t.bpm <= tol_max
                 ]
 
             # 3. Half-time or double-time match (e.g. 160 BPM track for 80 BPM target)
             if not candidates:
                 candidates = [
                     t for t in all_tracks
-                    if t.path not in used_paths and (
+                    if is_available(t) and (
                         min_bpm <= t.bpm * 2 <= max_bpm or
                         min_bpm <= t.bpm / 2 <= max_bpm
                     )
@@ -291,7 +338,7 @@ class LibraryIndexer:
 
             # 4. Fallback: closest available unused track
             if not candidates:
-                unused = [t for t in all_tracks if t.path not in used_paths]
+                unused = [t for t in all_tracks if is_available(t)]
                 target_mid = (min_bpm + max_bpm) / 2
                 candidates = sorted(
                     unused if unused else all_tracks,
@@ -304,6 +351,7 @@ class LibraryIndexer:
             for track in candidates:
                 segment_tracks.append(Path(track.path))
                 used_paths.add(track.path)
+                used_song_keys.add((track.title.strip().lower(), track.artist.strip().lower()))
                 # First track gives full duration; subsequent tracks lose 3.0s in acrossfade
                 effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
                 segment_accumulated_sec += effective_duration
