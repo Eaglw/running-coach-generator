@@ -1,108 +1,158 @@
 # 🏃 Running Coach Generator
 
-> **Self-hosted AI Running Workout Generator** • Mixa la tua libreria musicale con indicazioni vocali generate dall'intelligenza artificiale e pubblica automaticamente gli allenamenti su un feed RSS per **Apple Podcasts** e **Apple Watch** (senza iPhone durante la corsa).
+> **Self-hosted, single-container AI guided running workout generator** that blends your local music library with neural voice coaching cues, automatically publishing episodes via a static Podcast RSS feed for offline sync on **Apple Podcasts** and **Apple Watch** (run without your iPhone!).
 
 ---
 
-## 🌟 Caratteristiche Principali
+## 🌟 Key Features
 
-- 🖥️ **Web Dashboard Integrata:** Interfaccia grafica sportiva per creare allenamenti da prompt vocale/testuale, monitorare l'avanzamento in tempo reale, ascoltare gli episodi e gestire la libreria musicale.
-- 🎵 **Music Indexer & BPM Detection:** Scansione automatica di `/data/music` con lettura dei tag ID3 (`TBPM`) e fallback intelligente tramite `librosa` (analisi spettrale su finestra di 60s) con cache JSON.
-- 🎛️ **Engine di Mixaggio Audio FFmpeg a Due Fasi:**
-  - **Step A:** Concatenazione delle tracce musicali con crossfade triangolare da 3 secondi (`acrossfade=d=3:c1=tri:c2=tri`) e normalizzazione loudness broadcast EBU R128 (`loudnorm=I=-16:TP=-1.5:LRA=11`).
-  - **Step B:** Posizionamento dei cue vocali al millisecondo (`adelay`) e **Sidechain Ducking** dinamico (`sidechaincompress=threshold=0.015:ratio=6:attack=50:release=600`) a guadagno unitario (`normalize=0`), con codifica MP3 a 192k CBR 44.1kHz.
-- 🤖 **LLM Coach Multi-Provider:** Supporto compatibile OpenAI (Google Gemini, OpenAI, Ollama locale) per il parsing da linguaggio naturale a struttura workout e la stesura dei testi vocali dei coach (`tecnico_motivazionale`, `calmo_mindful`, `militare_severo`). Include fallback euristico in italiano integrato.
-- 🎙️ **TTS Neurale in Italiano:** Pattern Strategy per `piper-tts`, `kokoro-onnx` e fallback di sistema.
-- 📡 **Podcast RSS Feed 2.0 & Byte-Serving:** Generazione atomica di `feed.xml` conforme agli standard iTunes/Apple Podcasts con date RFC 2822 e supporto obbligatorio `HTTP Range` per Apple Watch.
+- 🖥️ **Integrated Web Dashboard GUI:** Modern, dark-mode sports dashboard to generate workouts via natural language or structured JSON, track background generation in real time, listen with an embedded HTML5 player, and inspect your music library.
+- 🎵 **Segment-Aligned Music Indexer & BPM Detection:** Scans `/data/music` for audio files (`.mp3`, `.flac`, `.m4a`), extracts ID3 tags (`TBPM`, artist, title), and runs automated spectral tempo estimation via `librosa` on a 60-second slice if tags are missing. Results are cached in `library_index.json`.
+- 🎛️ **Two-Step Zero-RAM FFmpeg Audio Mixing Engine:**
+  - **Step A (Segment-Aligned Music Bed):** Groups tracks by segment, applies 3-second triangular crossfades (`acrossfade=d=3:c1=tri:c2=tri`) accounting for duration loss, trims exactly at segment boundaries (`atrim=0:{segment_duration}`), and applies broadcast EBU R128 loudness normalization (`loudnorm=I=-16:TP=-1.5:LRA=11`) with **zero giant RAM buffers** (`aloop` OOM eliminated).
+  - **Step B (Precision Ducking & MP3 Mixdown):** Places voice cues with millisecond precision (`adelay`), applies dynamic **Sidechain Compression Ducking** (`sidechaincompress=threshold=0.015:ratio=6:attack=50:release=600`), and mixes with unity gain compensation (`amix` with `normalize=0`) encoded to 192k CBR 44.1kHz MP3.
+- 🤖 **Multi-Provider LLM Coach:** OpenAI-compatible client (Google Gemini, OpenAI, local Ollama) using Structured Outputs to parse free-form dictation into strict `WorkoutRequest` schemas and generate natural Italian coaching scripts according to the coach persona (`tecnico_motivazionale`, `calmo_mindful`, `militare_severo`). Includes a rule-based heuristic Italian fallback.
+- 🎙️ **Real Neural TTS Engine:** Strategy pattern supporting `piper-tts` and `kokoro-onnx`. Includes an **automatic on-demand downloader** that fetches Italian neural voice models from Hugging Face (`rhasspy/piper-voices`) into `/data/cache/tts_models/`.
+- 📡 **Podcast RSS 2.0 & Apple Watch Byte-Serving:** Generates RFC 2822 compliant, iTunes-compatible `feed.xml` and serves audio files with mandatory `HTTP Range` byte-serving for seamless Apple Podcasts and Apple Watch background syncing.
 
 ---
 
-## 🚀 Avvio Rapido con Docker
+## 🚀 Quickstart with Docker Compose
 
-Il modo più rapido per avviare il container è tramite Docker Compose:
+Running the entire service inside a single container is simple:
 
 ```bash
-# 1. Clona il repository
+# 1. Clone the repository
 git clone https://github.com/Eaglw/running-coach-generator.git
 cd running-coach-generator
 
-# 2. Configura le variabili d'ambiente
+# 2. Configure environment variables
 cp .env.example .env
 
-# 3. Posiziona i tuoi file musicali (.mp3, .flac) nella cartella locale
+# 3. Add your music tracks (.mp3, .flac) to the local folder:
 # ./data/music/
 
-# 4. Avvia il container
+# 4. Build and start the container
 docker compose up -d --build
 ```
 
-La **Web GUI** sarà immediatamente disponibile all'indirizzo:
+The Web Dashboard will be live at:
 👉 **[http://localhost:8000](http://localhost:8000)**
 
 ---
 
-## ⌚ Come Sincronizzare con Apple Watch
+## ⌚ How to Sync with Apple Watch (Offline Running)
 
-1. Apri l'app **Apple Podcasts** su iPhone.
-2. Vai nella scheda **Libreria**.
-3. Tocca i tre puntini (**...**) in alto a destra e seleziona **"Segui uno spettacolo tramite URL..."**.
-4. Incolla l'URL del tuo feed: `http://<IP-DEL-TUO-SERVER>:8000/podcast/feed.xml`.
-5. Apri l'app **Podcast sull'Apple Watch**: i nuovi allenamenti generati verranno scaricati automaticamente nella memoria dell'orologio per essere ascoltati offline con cuffie Bluetooth mentre corri, lasciando l'iPhone a casa!
+1. Open the **Apple Podcasts** app on your iPhone.
+2. Tap the **Library** tab.
+3. Tap the **three dots (...)** in the top right corner and select **"Follow a Show by URL..."**.
+4. Paste your feed URL: `http://<YOUR-SERVER-IP>:8000/podcast/feed.xml`.
+5. Open the **Podcasts app on your Apple Watch**: new generated workout tracks will automatically download to your watch over Wi-Fi/Bluetooth, allowing you to run untethered with Bluetooth headphones while leaving your iPhone at home!
 
 ---
 
-## 🛠️ Struttura delle Cartelle
+## 📁 Directory Structure
 
 ```text
 running-coach-generator/
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── .env.example
+├── docker-compose.yml          # Container configuration with host volume binding
+├── Dockerfile                  # python:3.11-slim + ffmpeg + espeak-ng + libsndfile1
+├── requirements.txt            # FastAPI, Uvicorn, Pydantic v2, mutagen, librosa, piper-tts
+├── .env.example                # Example configuration and environment settings
+├── README.md                   # Project documentation and setup guide
 ├── app/
-│   ├── main.py                 # Server FastAPI, Web GUI, background workers & static files
-│   ├── config.py               # Pydantic Settings & risoluzione cartelle
-│   ├── models.py               # Schemi Pydantic v2 (WorkoutRequest, CoachCue, Segment)
+│   ├── main.py                 # FastAPI application, background tasks, static mounts & routes
+│   ├── config.py               # Pydantic Settings and path resolution
+│   ├── models.py               # Pydantic v2 schemas (WorkoutRequest, Segment, CoachCue, etc.)
 │   ├── static/
-│   │   └── index.html          # Dashboard Single Page Application (Tailwind CSS)
+│   │   └── index.html          # Interactive Web Dashboard (Tailwind CSS, dark mode)
 │   └── services/
-│       ├── audio_mixer.py      # Engine FFmpeg (crossfade, sidechain ducking, MP3 mixdown)
-│       ├── library_indexer.py  # Scansione ID3 & analisi BPM con fallback librosa
-│       ├── llm_coach.py        # Parser prompt & generatore script coach in italiano
-│       ├── tts_engine.py       # Strategy pattern per Piper, Kokoro e fallback vocale
-│       └── rss_generator.py    # Generatore atomico feed.xml conforme Apple Podcasts
+│       ├── audio_mixer.py      # Two-step FFmpeg engine (crossfade, sidechain ducking, mixdown)
+│       ├── library_indexer.py  # ID3 extraction, librosa fallback BPM & segment track selector
+│       ├── llm_coach.py        # Natural language parser & Italian cue script generator
+│       ├── tts_engine.py       # Strategy pattern for Piper, Kokoro & system fallback
+│       └── rss_generator.py    # Atomic RFC 2822 iTunes-compliant feed.xml generator
 └── data/
-    ├── music/                  # Cartella dove posizionare i tuoi brani musicali
-    ├── cache/                  # Cache library_index.json (BPM e metadati)
-    ├── podcasts/               # feed.xml ed episodi generati
-    └── temp/                   # File temporanei di elaborazione audio
+    ├── music/                  # Place your source MP3/FLAC music tracks here
+    ├── cache/                  # library_index.json & tts_models/ (auto-downloaded ONNX models)
+    ├── podcasts/               # feed.xml & generated workout episodes (.mp3)
+    └── temp/                   # Temporary working audio files (cleaned up automatically)
 ```
 
 ---
 
-## 📡 API Endpoints
+## 📡 REST API Endpoints
 
-I documenti OpenAPI Swagger interattivi sono consultabili all'indirizzo **`http://localhost:8000/docs`**.
+Interactive Swagger API documentation is available at **`http://localhost:8000/docs`**.
 
-| Metodo | Endpoint | Descrizione |
+| Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/` | Web Dashboard GUI |
-| `POST` | `/api/v1/workout/from-text` | Genera workout partendo da descrizione testuale o vocale |
-| `POST` | `/api/v1/workout/from-json` | Genera workout da payload JSON strutturato |
-| `GET` | `/api/v1/jobs/{job_id}` | Stato di avanzamento del task in background |
-| `POST` | `/api/v1/library/scan` | Forza la scansione e indicizzazione della libreria musicale |
-| `GET` | `/api/v1/library/tracks` | Elenco delle tracce musicali con BPM rilevati |
-| `GET` | `/api/v1/episodes` | Elenco degli episodi pubblicati nel podcast |
-| `GET` | `/podcast/feed.xml` | Feed RSS conforme Apple Podcasts |
-| `GET` | `/podcast/episodes/{file}` | Streaming statico MP3 con supporto Byte-Serving `HTTP Range` |
-| `GET` | `/health` | Healthcheck del container |
+| `GET` | `/health` | Healthcheck endpoint (`{"status": "ok"}`) |
+| `POST` | `/api/v1/workout/from-text` | Generate workout from natural language prompt or voice dictation |
+| `POST` | `/api/v1/workout/from-json` | Generate workout from strict structured JSON specification |
+| `GET` | `/api/v1/jobs/{job_id}` | Query status and progress of background generation job |
+| `POST` | `/api/v1/library/scan` | Trigger re-scan and BPM indexing of `/data/music` |
+| `GET` | `/api/v1/library/tracks` | Retrieve list of all indexed music tracks and BPM values |
+| `GET` | `/api/v1/episodes` | List all published workout episodes |
+| `GET` | `/podcast/feed.xml` | Serve Podcast 2.0 RSS feed (`application/rss+xml`) |
+| `GET` | `/podcast/episodes/{file}` | Serve episode audio files with `HTTP Range` byte-serving |
 
 ---
 
-## 🧪 Test di Verifica Locale
+## 📋 Workout JSON Contract Example
 
-Puoi verificare autonomamente la correttezza del mixaggio audio FFmpeg senza configurazioni esterne con il test CLI integrato:
+```json
+{
+  "workout_title": "Progressivo 45m - Focus Soglia",
+  "coach_persona": "tecnico_motivazionale",
+  "total_duration_sec": 2700,
+  "segments": [
+    {
+      "name": "Riscaldamento Progressivo",
+      "duration_sec": 600,
+      "intensity": "low",
+      "target_bpm_range": [115, 130],
+      "target_pace": "5:30/km",
+      "coach_cues": [
+        {
+          "offset_sec": 5,
+          "intent": "Benvenuto, riepilogo struttura allenamento e avvio riscaldamento.",
+          "spoken_text": null
+        },
+        {
+          "offset_sec": 570,
+          "intent": "Preavviso: tra 30 secondi si passa al blocco centrale a ritmo medio.",
+          "spoken_text": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+*Note:* If `spoken_text` is `null`, `llm_coach.py` dynamically writes the spoken phrase based on `intent`, `coach_persona`, `segment.name`, and `target_pace`.
+
+---
+
+## 🧪 Local Testing & Verification
+
+You can verify the audio mixing pipeline standalone (without needing API keys or local music files) using the built-in test suite:
 
 ```bash
+# Test the FFmpeg 2-step sidechain ducking engine
 python -m app.services.audio_mixer
 ```
+
+To run the application locally without Docker:
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.
