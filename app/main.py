@@ -337,6 +337,21 @@ async def get_episodes():
     return rss_generator._load_episodes_metadata()
 
 
+@app.delete(
+    "/api/v1/episodes/{guid}",
+    summary="Delete a published podcast episode by GUID"
+)
+async def delete_episode(guid: str):
+    """
+    Deletes the workout episode audio file from disk, removes it from metadata,
+    and regenerates feed.xml.
+    """
+    deleted = rss_generator.delete_episode(guid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Episode GUID not found")
+    return {"status": "deleted", "guid": guid}
+
+
 @app.get(
     "/api/v1/settings",
     summary="Get active configuration parameters"

@@ -125,6 +125,39 @@ class RSSGenerator:
         self.generate_feed(episodes)
         return episode
 
+    def delete_episode(self, guid: str) -> bool:
+        """
+        Delete an episode by guid:
+        1. Remove the mp3 file from disk to free storage space.
+        2. Remove the entry from episodes.json.
+        3. Regenerate feed.xml immediately.
+        Returns True if the episode was found and deleted, False otherwise.
+        """
+        episodes = self._load_episodes_metadata()
+        target = next((e for e in episodes if e.guid == guid), None)
+        if not target:
+            logger.warning("Attempted to delete non-existent episode guid=%s", guid)
+            return False
+
+        # 1. Delete physical MP3 file if present
+        if target.filename:
+            file_path = self.podcast_dir / "episodes" / target.filename
+            try:
+                if file_path.exists():
+                    file_path.unlink()
+                    logger.info("Deleted audio file %s for episode %s", file_path, guid)
+            except Exception as e:
+                logger.error("Failed to delete physical file %s: %s", file_path, e)
+
+        # 2. Filter out deleted episode
+        updated_episodes = [e for e in episodes if e.guid != guid]
+        self._save_episodes_metadata(updated_episodes)
+
+        # 3. Regenerate feed.xml
+        self.generate_feed(updated_episodes)
+        logger.info("Episode %s successfully removed and feed.xml regenerated", guid)
+        return True
+
     def generate_feed(self, episodes: Optional[List[EpisodeMetadata]] = None) -> Path:
         """
         Generate and atomically write feed.xml according to Podcast 2.0 / iTunes specs.
