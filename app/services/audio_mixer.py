@@ -103,48 +103,78 @@ class AudioMixer:
         if not normalized_segments:
             raise AudioMixerError("No valid tracks provided in segment_tracks.")
 
-        # Collect unique input files preserving first-appearance order
-        unique_paths: List[Path] = []
-        path_to_idx = {}
-        for _, tracks in normalized_segments:
-            for p in tracks:
-                resolved = p.resolve()
-                if resolved not in path_to_idx:
-                    path_to_idx[resolved] = len(unique_paths)
-                    unique_paths.append(p)
+        # Expand normalized segments: ensure tracks cover seg_dur
+        expanded_segments: List[Tuple[int, List[Path]]] = []
+        for seg_dur, tracks in normalized_segments:
+            current_tracks = list(tracks)
+            # Check effective duration and repeat tracks if shorter than seg_dur
+            seg_total = 0.0
+            track_durations = []
+            for p in current_tracks:
+                try:
+                    d = self._get_duration_sec(p)
+                except Exception:
+                    d = 180.0
+                track_durations.append(d)
+                eff = d if len(track_durations) == 1 else max(0.0, d - 3.0)
+                seg_total += eff
 
-        for p in unique_paths:
-            if not p.exists():
-                raise AudioMixerError(f"Music track not found: {p}")
+            if seg_total < seg_dur and current_tracks:
+                idx = 0
+                original_len = len(current_tracks)
+                while seg_total < seg_dur and len(current_tracks) < 50:
+                    t = current_tracks[idx % original_len]
+                    d = track_durations[idx % original_len]
+                    current_tracks.append(t)
+                    eff = max(0.0, d - 3.0)
+                    seg_total += eff
+                    idx += 1
+            expanded_segments.append((seg_dur, current_tracks))
+
+        normalized_segments = expanded_segments
+
+        # Allocate a dedicated -i input for EVERY track occurrence (no deduplication, avoiding stream reuse crash)
+        input_files: List[Path] = []
+        segment_stream_indices: List[Tuple[int, List[int]]] = []
+        for seg_dur, tracks in normalized_segments:
+            seg_indices: List[int] = []
+            for p in tracks:
+                if not p.exists():
+                    raise AudioMixerError(f"Music track not found: {p}")
+                in_idx = len(input_files)
+                input_files.append(p)
+                seg_indices.append(in_idx)
+            segment_stream_indices.append((seg_dur, seg_indices))
 
         cmd = ["ffmpeg", "-y"]
-        for p in unique_paths:
+        for p in input_files:
             cmd.extend(["-i", str(p)])
 
         filter_parts: List[str] = []
-        num_segments = len(normalized_segments)
+        num_segments = len(segment_stream_indices)
         segment_output_tags: List[str] = []
 
-        for s_idx, (seg_dur, tracks) in enumerate(normalized_segments):
+        for s_idx, (seg_dur, stream_indices) in enumerate(segment_stream_indices):
             seg_tag = f"seg{s_idx}"
-            if len(tracks) == 1:
-                in_idx = path_to_idx[tracks[0].resolve()]
-                # Loop single track only if shorter than seg_dur using a tiny 10s buffer (size=44100*10)
+            fade_out_st = max(0.0, float(seg_dur) - 1.5)
+            fade_filter = f"afade=t=in:st=0:d=1.5,afade=t=out:st={fade_out_st}:d=1.5"
+
+            if len(stream_indices) == 1:
+                in_idx = stream_indices[0]
                 filter_parts.append(
                     f"[{in_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,"
-                    f"aloop=loop=-1:size=44100*10,atrim=0:{seg_dur}[{seg_tag}]"
+                    f"apad,atrim=0:{seg_dur},{fade_filter}[{seg_tag}]"
                 )
             else:
-                # Format each track in this segment
-                for t_idx, t_path in enumerate(tracks):
-                    in_idx = path_to_idx[t_path.resolve()]
+                # Format each track occurrence in this segment
+                for t_idx, in_idx in enumerate(stream_indices):
                     filter_parts.append(
                         f"[{in_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[s{s_idx}_t{t_idx}]"
                     )
 
                 # Chain crossfades inside this segment
                 current_tag = f"s{s_idx}_t0"
-                for t_idx in range(1, len(tracks)):
+                for t_idx in range(1, len(stream_indices)):
                     next_tag = f"s{s_idx}_t{t_idx}"
                     out_tag = f"s{s_idx}_m{t_idx}"
                     filter_parts.append(
@@ -152,8 +182,10 @@ class AudioMixer:
                     )
                     current_tag = out_tag
 
-                # Strictly trim to segment duration
-                filter_parts.append(f"[{current_tag}]atrim=0:{seg_dur}[{seg_tag}]")
+                # Strictly trim to segment duration with apad guarantee and smooth segment boundary fades
+                filter_parts.append(
+                    f"[{current_tag}]apad,atrim=0:{seg_dur},{fade_filter}[{seg_tag}]"
+                )
 
             segment_output_tags.append(f"[{seg_tag}]")
 

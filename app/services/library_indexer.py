@@ -310,16 +310,17 @@ class LibraryIndexer:
                 if segment_accumulated_sec >= target_duration:
                     break
 
-            # If segment still needs audio coverage, allow reuse with lowest BPM distance
-            if segment_accumulated_sec < target_duration:
+            # If segment still needs audio coverage, repeat tracks from pool until target_duration is covered
+            if segment_accumulated_sec < target_duration and all_tracks:
                 target_mid = (min_bpm + max_bpm) / 2
                 pool = sorted(all_tracks, key=lambda t: abs(t.bpm - target_mid))
-                for track in pool:
+                pool_idx = 0
+                while segment_accumulated_sec < target_duration and pool:
+                    track = pool[pool_idx % len(pool)]
                     segment_tracks.append(Path(track.path))
                     effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
                     segment_accumulated_sec += effective_duration
-                    if segment_accumulated_sec >= target_duration:
-                        break
+                    pool_idx += 1
 
             result.append((target_duration, segment_tracks))
 

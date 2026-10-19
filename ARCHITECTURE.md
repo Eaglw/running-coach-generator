@@ -54,46 +54,45 @@ running-coach-generator/
 
 When maintaining or extending this codebase, **do not revert** these design decisions:
 
-### A. Segment-to-Music Alignment (Strict BPM Sync)
+### A. Segment-to-Music Alignment (Strict BPM Sync & Zero Drift)
 * **The Problem:** Passing a flat `List[Path]` to FFmpeg causes tracks from Segment 1 (e.g. Warmup at 120 BPM) to spill over into Segment 2 (e.g. Threshold at 165 BPM) if track durations do not align perfectly with segment boundaries.
 * **The Architecture:**
   - `library_indexer.select_tracks_for_segments` returns `List[Tuple[int, List[Path]]]`, representing `[(segment_duration_sec, [tracks]), ...]`.
-  - In `audio_mixer.generate_music_bed`, each segment's sub-bed is constructed individually, crossfaded internally, and strictly trimmed to `atrim=0:{seg_duration}`.
-  - Sub-beds are concatenated using FFmpeg `concat=n={S}:v=0:a=1`. This guarantees that **at the exact second of a segment transition, the music and BPM switch simultaneously with the coach's voice cue.**
+  - In `audio_mixer.generate_music_bed`, tracks within each segment are crossfaded (`acrossfade=d=3`), guaranteed with `apad,atrim=0:{seg_dur}` to match the exact segment duration down to the millisecond, and smoothed at the boundaries with a 1.5s fade-in and fade-out (`afade=t=in:st=0:d=1.5,afade=t=out:st={max(0, seg_dur - 1.5)}:d=1.5`).
+  - Concatenation of segment sub-beds is done via `concat=n={num_segments}:v=0:a=1` so BPM transitions align strictly with segment boundaries and coach cues with zero audio drift.
 
-### B. Accounting for the 3-Second Crossfade Loss
-* In `acrossfade=d=3:c1=tri:c2=tri`, every transition shortens the audio by 3.0 seconds.
-* `library_indexer.py` accounts for this:
-  ```python
-  effective_duration = track.duration_sec if len(segment_tracks) == 1 else max(0.0, track.duration_sec - 3.0)
-  segment_accumulated_sec += effective_duration
-  ```
+### B. Dedicated Stream Allocation (Zero Stream Reuse Crash)
+* **The Problem:** Reusing track input streams `[in_idx:a]` multiple times without `asplit` when a song is repeated causes FFmpeg to crash with `Invalid argument` (stream already consumed).
+* **The Fix:** `generate_music_bed` never deduplicates input files; it passes every track occurrence as an independent `-i` argument, ensuring every segment has dedicated input stream indices.
 
-### C. Zero-RAM FFmpeg Policy (No Giant `aloop` Buffers)
-* An earlier bug used `aloop=loop=-1:size=2e+09` across the entire workout. The `size` parameter in FFmpeg specifies PCM samples held in RAM, causing Docker OOM kills on 45-60 minute workouts.
-* **Current Solution:** Segments are bounded and concatenated sequentially. If a single track must loop within a segment, it uses a tiny 10-second buffer (`aloop=loop=-1:size=44100*10`), consuming mere megabytes.
+### C. Zero-RAM Policy & Removal of `aloop`
+* **The Problem:** FFmpeg's `aloop=loop=-1:size=2e+09` buffers gigabytes of uncompressed PCM in RAM, causing Docker OOM kills. Furthermore, `aloop=size=44100*10` only loops the first 10 seconds of a track.
+* **The Architecture:** `aloop` is eliminated completely. If tracks in a segment are shorter than the segment's required duration, `library_indexer.py` and `audio_mixer.py` cycle and repeat the tracks in the list until `seg_dur` is covered, and `apad,atrim=0:{seg_dur}` guarantees the exact duration.
 
-### D. Sidechain Ducking & Unity Gain Preservation
-* **The Problem:** The standard `amix=inputs=2` filter attenuates all inputs by 50% (-6dB) by default to prevent clipping, cutting workout volume in half. Additionally, if the sidechain track ends early, `sidechaincompress` abruptly cuts the music.
-* **The Solution:**
-  1. `apad` is appended to the voice timeline so sidechain compression remains active until the music bed naturally finishes.
+### D. Sidechain Ducking & Unity Gain Conservation
+* When coach speech is playing, the background music bed volume drops by approximately -18dB smoothly and recovers cleanly when voice stops.
+* FFmpeg Filtergraph implementation:
+  1. Voice cues are positioned on a silent background track via `adelay={offset_ms}` and combined via `amix`.
   2. `sidechaincompress` smoothly attenuates the music bed when speech is detected:
      `sidechaincompress=threshold=0.015:ratio=6:attack=50:release=600`
   3. `amix` uses `normalize=0` with `duration=first` for unity gain preservation:
      `amix=inputs=2:duration=first:dropout_transition=0:normalize=0`
 
-### E. Real Neural TTS with Automatic Model Downloader
-* `PiperTTSEngine` (`app/services/tts_engine.py`) does not require manual model copying. It checks `settings.CACHE_DIR / "tts_models"` and streams the `.onnx` and `.onnx.json` files directly from Hugging Face (`rhasspy/piper-voices`) on first use.
-* Default Italian voice: `it_IT-riccardo-x_low` (or `it_IT-paola-medium`).
-* Kokoro voices: `im_nicola` and `if_sara` (`kokoro-v1.0.onnx`).
-* If network or binaries are missing, `SystemFallbackTTSEngine` (using `espeak-ng` or system synthesis) steps in silently to prevent runtime exceptions.
+### E. Real Neural TTS with In-Memory ONNX Model Caching
+* `PiperTTSEngine` and `KokoroTTSEngine` cache their loaded model instances (`_loaded_voice_cache` and `_kokoro_instance_cache`) in memory, avoiding reloading multi-megabyte ONNX graphs and weights for every cue.
+* Automatically downloads `.onnx` and `.onnx.json` from Hugging Face on demand if not present.
+* Silent fallback to `SystemFallbackTTSEngine` ensures synthesis never crashes even if external dependencies are missing.
 
-### F. Apple Watch Byte-Serving (`HTTP Range`)
+### F. Lifecycle Resource Management & Cover Artwork
+* Temporary session directories (`data/temp/job_{job_id}`) containing intermediate `cue_*.wav` files are strictly cleaned up via `finally: shutil.rmtree(...)` in `_process_workout_job`.
+* On startup, `lifespan` ensures a compliant 1400x1400 podcast cover art (`data/podcasts/cover.jpg`) is generated via FFmpeg if not already present, preventing 404 errors during Apple Podcasts validation.
+
+### G. Apple Watch Byte-Serving (`HTTP Range`)
 * Apple Watch podcast sync requires byte-range requests (`Accept-Ranges: bytes`).
 * FastAPI's `StaticFiles` natively supports `HTTP Range`. Thus, `/podcast` is mounted via `StaticFiles(directory=settings.PODCAST_DIR)`.
 * An explicit `GET /podcast/feed.xml` route is declared before the mount to guarantee `Content-Type: application/rss+xml`.
 
-### G. Multi-Provider LLM Dispatch & Settings Persistence
+### H. Multi-Provider LLM Dispatch & Settings Persistence
 * `LLMCoach` (`app/services/llm_coach.py`) automatically dispatches requests according to `settings.LLM_PROVIDER`:
   - **Ollama & LM Studio:** Uses `openai.OpenAI` pointing to `http://localhost:11434/v1` or `http://localhost:1234/v1` with automatic fallback when local models reject strict `json_object` enforcement.
   - **Google Gemini & OpenAI:** Calls official OpenAI-compatible endpoints with structured JSON schemas.
@@ -101,7 +100,7 @@ When maintaining or extending this codebase, **do not revert** these design deci
   - **Connection Testing:** `POST /api/v1/settings/test-llm` sends a lightweight ping prompt to measure roundtrip latency and catch model configuration issues prior to running workouts.
 * Settings edited in the Web GUI are saved to `/data/cache/settings.json` via `settings.save_dynamic_settings()`, surviving container rebuilds and server restarts.
 
-### H. Dynamic Music Directory Configuration
+### I. Dynamic Music Directory Configuration
 * In addition to the default `./data/music` container directory, `Settings.MUSIC_DIR` is dynamically configurable at runtime via the Web GUI and `POST /api/v1/settings`.
 * `LibraryIndexer.music_dir` is implemented as a dynamic property referencing `settings.MUSIC_DIR`. This allows scanning any host folder (such as a local Windows user music library `C:\Users\<user>\Music`) seamlessly without code modifications.
 

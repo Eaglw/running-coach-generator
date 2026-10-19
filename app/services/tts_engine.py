@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from app.config import settings
 
@@ -35,6 +35,8 @@ class PiperTTSEngine(BaseTTSEngine):
     Piper TTS integration with automatic Italian model downloader from HuggingFace.
     Executes either the piper python module or the piper CLI binary.
     """
+
+    _loaded_voice_cache: Dict[str, Any] = {}
 
     def __init__(self, voice_name: Optional[str] = None) -> None:
         self.voice_name = voice_name or settings.TTS_VOICE
@@ -96,12 +98,17 @@ class PiperTTSEngine(BaseTTSEngine):
 
         model_path = self._ensure_voice_model()
 
-        # 1. Try python piper module directly
+        # 1. Try python piper module directly with in-memory model cache
         try:
             from piper import PiperVoice  # type: ignore
             if model_path and model_path.exists():
+                model_key = str(model_path.resolve())
+                if model_key not in self._loaded_voice_cache:
+                    logger.info("Loading Piper ONNX voice model '%s' into memory...", model_path.name)
+                    self._loaded_voice_cache[model_key] = PiperVoice.load(model_key)
+                voice = self._loaded_voice_cache[model_key]
+
                 import wave
-                voice = PiperVoice.load(str(model_path))
                 with wave.open(str(output_wav_path), "wb") as wav_file:
                     voice.synthesize(text, wav_file)
                 if output_wav_path.exists() and output_wav_path.stat().st_size > 100:
@@ -145,10 +152,11 @@ class KokoroTTSEngine(BaseTTSEngine):
     Kokoro ONNX neural TTS engine for Italian / multi-language synthesis.
     Standard Italian voices: im_nicola (male), if_sara (female) in kokoro-v1.0.onnx.
     """
+    _kokoro_instance_cache: Optional[Any] = None
 
     def __init__(self, voice_name: Optional[str] = None) -> None:
         # Standard Kokoro v1.0 Italian voices: 'im_nicola' or 'if_sara'
-        self.voice_name = voice_name or "im_nicola"
+        self.voice_name = voice_name or settings.TTS_VOICE or "im_nicola"
 
     def synthesize(self, text: str, output_wav_path: Path) -> Path:
         output_wav_path.parent.mkdir(parents=True, exist_ok=True)
@@ -160,7 +168,10 @@ class KokoroTTSEngine(BaseTTSEngine):
             voices_file = models_dir / "voices-v1.0.bin"
 
             if model_file.exists() and voices_file.exists():
-                kokoro = kokoro_onnx.Kokoro(str(model_file), str(voices_file))
+                if KokoroTTSEngine._kokoro_instance_cache is None:
+                    logger.info("Loading Kokoro ONNX model into memory...")
+                    KokoroTTSEngine._kokoro_instance_cache = kokoro_onnx.Kokoro(str(model_file), str(voices_file))
+                kokoro = KokoroTTSEngine._kokoro_instance_cache
                 samples, sample_rate = kokoro.create(text, voice=self.voice_name, speed=1.0, lang="it")
                 import soundfile as sf
                 sf.write(str(output_wav_path), samples, sample_rate)

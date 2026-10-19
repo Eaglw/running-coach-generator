@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Any, Dict, List, Optional
 import uuid
@@ -43,6 +44,22 @@ async def lifespan(app: FastAPI):
     # Ensure initial feed.xml exists
     if not settings.RSS_FEED_PATH.exists():
         rss_generator.generate_feed([])
+
+    # Ensure default podcast cover artwork exists (1400x1400 requirement for Apple Podcasts)
+    cover_path = settings.PODCAST_DIR / "cover.jpg"
+    if not cover_path.exists():
+        try:
+            logger.info("Generating default 1400x1400 podcast cover artwork...")
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "lavfi",
+                "-i", "color=c=#0f172a:s=1400x1400:d=1",
+                "-frames:v", "1",
+                "-q:v", "2",
+                str(cover_path)
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.info("Generated %s successfully.", cover_path)
+        except Exception as e:
+            logger.warning("Failed to generate default cover image: %s", e)
 
     # Trigger initial non-forced scan if library cache is empty
     if not library_indexer.get_tracks():
@@ -188,6 +205,9 @@ def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
         job.status = JobStatus.FAILED
         job.error = str(e)
         job.updated_at = datetime.now(timezone.utc)
+    finally:
+        shutil.rmtree(session_temp_dir, ignore_errors=True)
+        logger.debug("[Job %s] Cleaned up temporary directory %s", job_id, session_temp_dir)
 
 
 # =====================================================================
