@@ -210,15 +210,27 @@ class KokoroTTSEngine(BaseTTSEngine):
                     logger.info("Loading Kokoro ONNX model into memory...")
                     KokoroTTSEngine._kokoro_instance_cache = kokoro_onnx.Kokoro(str(model_file), str(voices_file))
                 kokoro = KokoroTTSEngine._kokoro_instance_cache
-                samples, sample_rate = kokoro.create(text, voice=self.voice_name, speed=1.0, lang="it")
+
+                # Determine kokoro language from voice prefix
+                v_lower = self.voice_name.lower()
+                if v_lower.startswith(("af_", "am_")):
+                    kokoro_lang = "en-us"
+                elif v_lower.startswith(("bf_", "bm_")):
+                    kokoro_lang = "en-gb"
+                elif v_lower.startswith(("ef_", "em_")):
+                    kokoro_lang = "es"
+                else:
+                    kokoro_lang = "it"
+
+                samples, sample_rate = kokoro.create(text, voice=self.voice_name, speed=1.0, lang=kokoro_lang)
                 import soundfile as sf
                 sf.write(str(output_wav_path), samples, sample_rate)
                 return output_wav_path
         except Exception as e:
             logger.warning("Kokoro ONNX synthesis failed (%s). Falling back to Piper neural voice.", e)
 
-        # If Kokoro models are not installed locally, fallback to Piper neural voice
-        return PiperTTSEngine().synthesize(text, output_wav_path)
+        # If Kokoro models fail, fallback to Piper neural voice
+        return PiperTTSEngine(voice_name=self.voice_name if "it_IT" in self.voice_name else None).synthesize(text, output_wav_path)
 
 
 class SystemFallbackTTSEngine(BaseTTSEngine):
@@ -283,17 +295,29 @@ class SystemFallbackTTSEngine(BaseTTSEngine):
         return output_wav_path
 
 
-def get_tts_engine(engine_name: Optional[str] = None) -> BaseTTSEngine:
+def get_tts_engine(
+    engine_name: Optional[str] = None,
+    voice_name: Optional[str] = None,
+    language: Optional[str] = None
+) -> BaseTTSEngine:
     """
-    Factory function returning the configured TTS engine.
+    Factory function returning the configured TTS engine with language-aware defaults.
     """
-    selected = (engine_name or settings.TTS_ENGINE).lower().strip()
-    if selected == "piper":
-        return PiperTTSEngine()
-    elif selected == "kokoro":
-        return KokoroTTSEngine()
-    elif selected == "fallback":
+    selected_engine = (engine_name or settings.TTS_ENGINE).lower().strip()
+    target_lang = (language or settings.WORKOUT_LANGUAGE or "it").lower().strip()
+
+    if selected_engine == "kokoro":
+        if not voice_name:
+            voice_name = "im_nicola" if target_lang == "it" else "af_heart"
+        return KokoroTTSEngine(voice_name=voice_name)
+    elif selected_engine == "piper":
+        if not voice_name:
+            voice_name = "it_IT-riccardo-x_low" if target_lang == "it" else "en_US-lessac-medium"
+        return PiperTTSEngine(voice_name=voice_name)
+    elif selected_engine == "fallback":
         return SystemFallbackTTSEngine()
     else:
-        logger.warning("Unknown TTS engine '%s'. Defaulting to Piper with fallback.", selected)
-        return PiperTTSEngine()
+        logger.warning("Unknown TTS engine '%s'. Defaulting to Piper.", selected_engine)
+        if not voice_name:
+            voice_name = "it_IT-riccardo-x_low" if target_lang == "it" else "en_US-lessac-medium"
+        return PiperTTSEngine(voice_name=voice_name)

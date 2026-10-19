@@ -107,14 +107,23 @@
                 </div>
               </div>
 
-              <!-- Coach Persona -->
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Running Coach Persona</label>
-                <select id="coachPersona" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
-                  <option value="tecnico_motivazionale">Technical Motivational (Professional, pace, breathing & posture)</option>
-                  <option value="calmo_mindful">Calm & Mindful (Relaxed, body awareness, fluid breathing)</option>
-                  <option value="militare_severo">Drill Sergeant (High discipline, no excuses, high cadence)</option>
-                </select>
+              <!-- Coach Persona & Language Grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Running Coach Persona</label>
+                  <select id="coachPersona" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+                    <option value="tecnico_motivazionale">Technical Motivational (Form, cadence & breath)</option>
+                    <option value="calmo_mindful">Calm & Mindful (Relaxed, body awareness)</option>
+                    <option value="militare_severo">Drill Sergeant (High discipline, push through fatigue)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Coaching Speech Language</label>
+                  <select id="workoutLanguage" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+                    <option value="it" selected>Italian 🇮🇹 (Default - Italian script & neural voice)</option>
+                    <option value="en">English 🇺🇸 (English script & neural voice)</option>
+                  </select>
+                </div>
               </div>
 
               <!-- Submit Button -->
@@ -347,7 +356,14 @@
             <span>🗣️</span> Text-to-Speech (TTS) Voice Engine
           </h3>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Coaching Language</label>
+              <select id="cfgWorkoutLanguage" onchange="onWorkoutLanguageChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                <option value="it">Italian 🇮🇹 (Italian coach voice & script)</option>
+                <option value="en">English 🇺🇸 (English coach voice & script)</option>
+              </select>
+            </div>
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">TTS Engine</label>
               <select id="cfgTtsEngine" onchange="onTtsEngineChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
@@ -359,8 +375,8 @@
             <div>
               <label class="block text-xs font-medium text-slate-400 mb-1">Voice Identifier</label>
               <select id="cfgTtsVoice" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
-                <option value="it_IT-riccardo-x_low">Riccardo (Male, Lightweight) - it_IT-riccardo-x_low</option>
-                <option value="it_IT-paola-medium">Paola (Female, Medium) - it_IT-paola-medium</option>
+                <option value="it_IT-riccardo-x_low">Riccardo (Male, Fast Neural) - it_IT-riccardo-x_low</option>
+                <option value="it_IT-paola-medium">Paola (Female, Natural) - it_IT-paola-medium</option>
               </select>
             </div>
           </div>
@@ -458,6 +474,7 @@
     async function submitWorkoutPrompt() {
       const promptText = document.getElementById('promptInput').value.trim();
       const persona = document.getElementById('coachPersona').value;
+      const language = document.getElementById('workoutLanguage') ? document.getElementById('workoutLanguage').value : 'it';
 
       if (!promptText) {
         alert('Please enter a description for your workout!');
@@ -472,7 +489,7 @@
         const res = await fetch('/api/v1/workout/from-text', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: promptText, coach_persona: persona })
+          body: JSON.stringify({ prompt: promptText, coach_persona: persona, language: language })
         });
         const data = await res.json();
         activeJobId = data.job_id;
@@ -681,21 +698,45 @@
       input.type = input.type === 'password' ? 'text' : 'password';
     }
 
+    function onWorkoutLanguageChanged() {
+      const lang = document.getElementById('cfgWorkoutLanguage').value;
+      if (document.getElementById('workoutLanguage')) {
+        document.getElementById('workoutLanguage').value = lang;
+      }
+      onTtsEngineChanged();
+    }
+
     function onTtsEngineChanged() {
       const engine = document.getElementById('cfgTtsEngine').value;
+      const lang = document.getElementById('cfgWorkoutLanguage') ? document.getElementById('cfgWorkoutLanguage').value : 'it';
       const voiceSelect = document.getElementById('cfgTtsVoice');
       voiceSelect.innerHTML = '';
 
       if (engine === 'piper') {
-        voiceSelect.innerHTML = `
-          <option value="it_IT-riccardo-x_low">Riccardo (Male, Lightweight) - it_IT-riccardo-x_low</option>
-          <option value="it_IT-paola-medium">Paola (Female, Medium) - it_IT-paola-medium</option>
-        `;
+        if (lang === 'en') {
+          voiceSelect.innerHTML = `
+            <option value="en_US-lessac-medium">Lessac (Female, Natural Studio) - en_US-lessac-medium</option>
+            <option value="en_US-ryan-medium">Ryan (Male, Energetic) - en_US-ryan-medium</option>
+          `;
+        } else {
+          voiceSelect.innerHTML = `
+            <option value="it_IT-riccardo-x_low">Riccardo (Male, Fast Neural) - it_IT-riccardo-x_low</option>
+            <option value="it_IT-paola-medium">Paola (Female, Natural) - it_IT-paola-medium</option>
+          `;
+        }
       } else if (engine === 'kokoro') {
-        voiceSelect.innerHTML = `
-          <option value="im_nicola">Nicola (Male) - im_nicola</option>
-          <option value="if_sara">Sara (Female) - if_sara</option>
-        `;
+        if (lang === 'en') {
+          voiceSelect.innerHTML = `
+            <option value="af_heart">Heart (Female, Ultra-Realistic) - af_heart</option>
+            <option value="am_adam">Adam (Male, Deep Natural) - am_adam</option>
+            <option value="bm_george">George (British Male, Sophisticated) - bm_george</option>
+          `;
+        } else {
+          voiceSelect.innerHTML = `
+            <option value="im_nicola">Nicola (Male, Studio Quality) - im_nicola</option>
+            <option value="if_sara">Sara (Female, Studio Quality) - if_sara</option>
+          `;
+        }
       } else {
         voiceSelect.innerHTML = `
           <option value="fallback">System Voice (espeak-ng / synth)</option>
@@ -721,10 +762,18 @@
         if (document.getElementById('cfgLlmModel')) document.getElementById('cfgLlmModel').value = s.LLM_MODEL || '';
         if (document.getElementById('cfgLlmBaseUrl')) document.getElementById('cfgLlmBaseUrl').value = s.LLM_BASE_URL || '';
         if (document.getElementById('cfgLlmApiKey')) document.getElementById('cfgLlmApiKey').value = s.LLM_API_KEY || '';
+        if (document.getElementById('cfgWorkoutLanguage')) {
+          document.getElementById('cfgWorkoutLanguage').value = s.WORKOUT_LANGUAGE || 'it';
+        }
+        if (document.getElementById('workoutLanguage')) {
+          document.getElementById('workoutLanguage').value = s.WORKOUT_LANGUAGE || 'it';
+        }
         if (document.getElementById('cfgTtsEngine')) {
           document.getElementById('cfgTtsEngine').value = s.TTS_ENGINE || 'piper';
           onTtsEngineChanged();
-          document.getElementById('cfgTtsVoice').value = s.TTS_VOICE || 'it_IT-riccardo-x_low';
+          if (document.getElementById('cfgTtsVoice') && s.TTS_VOICE) {
+            document.getElementById('cfgTtsVoice').value = s.TTS_VOICE;
+          }
         }
         if (document.getElementById('cfgBaseUrl')) document.getElementById('cfgBaseUrl').value = s.BASE_URL || 'http://192.168.1.12:8000';
         if (document.getElementById('cfgPodcastTitle')) document.getElementById('cfgPodcastTitle').value = s.PODCAST_TITLE || '';
@@ -749,6 +798,7 @@
         LLM_MODEL: document.getElementById('cfgLlmModel').value.trim(),
         LLM_BASE_URL: document.getElementById('cfgLlmBaseUrl').value.trim(),
         LLM_API_KEY: document.getElementById('cfgLlmApiKey').value.trim(),
+        WORKOUT_LANGUAGE: document.getElementById('cfgWorkoutLanguage').value,
         TTS_ENGINE: document.getElementById('cfgTtsEngine').value,
         TTS_VOICE: document.getElementById('cfgTtsVoice').value,
         BASE_URL: document.getElementById('cfgBaseUrl').value.trim(),

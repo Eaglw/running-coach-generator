@@ -78,6 +78,7 @@ class WorkoutRequest(BaseModel):
         description="Tone and style of the voice coach (e.g., 'tecnico_motivazionale', 'calmo_mindful', 'militare_severo')"
     )
     total_duration_sec: int = Field(..., gt=0, description="Expected total duration in seconds")
+    language: str = Field(default="it", description="Language for workout titles, cues and voice: 'it' or 'en'")
     segments: List[Segment] = Field(..., min_length=1, description="Ordered list of workout segments")
 
     @model_validator(mode="after")
@@ -95,6 +96,7 @@ class PromptWorkoutRequest(BaseModel):
     """
     prompt: str = Field(..., min_length=5, description="Natural language description of the workout")
     coach_persona: str = Field(default="tecnico_motivazionale", description="Tone and persona of coach")
+    language: str = Field(default="it", description="Coaching voice language: 'it' or 'en'")
 
 
 class JobStatus(str, Enum):

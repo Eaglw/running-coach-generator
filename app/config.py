@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     # TTS Settings
     TTS_ENGINE: str = Field(default="piper", description="TTS engine to use: 'piper' or 'kokoro'")
     TTS_VOICE: str = Field(default="it_IT-riccardo-x_low", description="Voice identifier for TTS")
+    WORKOUT_LANGUAGE: str = Field(default="it", description="Coaching speech language: 'it' or 'en'")
 
     @property
     def DYNAMIC_SETTINGS_PATH(self) -> Path:

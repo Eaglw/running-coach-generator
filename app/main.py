@@ -118,9 +118,9 @@ def _process_workout_job(job_id: str, workout: WorkoutRequest) -> None:
         job.status = JobStatus.SYNTHESIZING_TTS
         job.progress = 0.35
         job.updated_at = datetime.now(timezone.utc)
-        logger.info("[Job %s] Synthesizing TTS audio cues...", job_id)
+        logger.info("[Job %s] Synthesizing TTS audio cues in language '%s'...", job_id, workout_with_scripts.language)
 
-        tts_engine = get_tts_engine()
+        tts_engine = get_tts_engine(language=workout_with_scripts.language)
         voice_cues = []  # List[Tuple[Path, int]] -> (wav_path, global_offset_ms)
 
         current_segment_start_sec = 0
@@ -265,7 +265,8 @@ async def create_workout_from_text(
     """
     parsed_workout = llm_coach.parse_prompt_to_workout(
         prompt=payload.prompt,
-        coach_persona=payload.coach_persona
+        coach_persona=payload.coach_persona,
+        language=payload.language
     )
     return await create_workout_from_json(parsed_workout, background_tasks)
 
@@ -333,6 +334,7 @@ async def get_active_settings():
         "LLM_API_KEY": settings.LLM_API_KEY,
         "TTS_ENGINE": settings.TTS_ENGINE,
         "TTS_VOICE": settings.TTS_VOICE,
+        "WORKOUT_LANGUAGE": settings.WORKOUT_LANGUAGE,
         "MUSIC_DIR": str(settings.MUSIC_DIR),
         "PODCAST_DIR": str(settings.PODCAST_DIR),
         "PODCAST_TITLE": settings.PODCAST_TITLE
@@ -347,8 +349,8 @@ async def update_settings(updates: Dict[str, Any]):
     """Update settings and persist to data/cache/settings.json."""
     allowed = {
         "BASE_URL", "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL",
-        "LLM_API_KEY", "TTS_ENGINE", "TTS_VOICE", "PODCAST_TITLE",
-        "MUSIC_DIR"
+        "LLM_API_KEY", "TTS_ENGINE", "TTS_VOICE", "WORKOUT_LANGUAGE",
+        "PODCAST_TITLE", "MUSIC_DIR"
     }
     filtered = {k: v for k, v in updates.items() if k in allowed}
     settings.save_dynamic_settings(filtered)
