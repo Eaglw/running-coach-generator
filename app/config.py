@@ -40,17 +40,59 @@ class Settings(BaseSettings):
         description="Public URL for podcast artwork"
     )
 
-    # LLM Settings (OpenAI-compatible)
+    # LLM Settings
+    LLM_PROVIDER: str = Field(
+        default="gemini",
+        description="LLM provider: 'gemini', 'ollama', 'lmstudio', 'openai', 'claude', or 'custom'"
+    )
     LLM_API_KEY: str = Field(default="", description="API key for LLM provider")
     LLM_BASE_URL: str = Field(
         default="https://generativelanguage.googleapis.com/v1beta/openai/",
-        description="Base URL for OpenAI-compatible client"
+        description="Base URL for OpenAI-compatible client or Anthropic API"
     )
     LLM_MODEL: str = Field(default="gemini-2.5-flash", description="Model name to use for cue script generation")
 
     # TTS Settings
     TTS_ENGINE: str = Field(default="piper", description="TTS engine to use: 'piper' or 'kokoro'")
     TTS_VOICE: str = Field(default="it_IT-riccardo-x_low", description="Voice identifier for TTS")
+
+    @property
+    def DYNAMIC_SETTINGS_PATH(self) -> Path:
+        return self.CACHE_DIR / "settings.json"
+
+    def load_dynamic_settings(self) -> None:
+        """Load overrides saved via Web GUI from data/cache/settings.json."""
+        if self.DYNAMIC_SETTINGS_PATH.exists():
+            try:
+                import json
+                with open(self.DYNAMIC_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for key, val in data.items():
+                        if hasattr(self, key):
+                            setattr(self, key, val)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Failed to load dynamic settings: %s", e)
+
+    def save_dynamic_settings(self, updates: dict) -> None:
+        """Save settings updates to data/cache/settings.json."""
+        import json
+        self.DYNAMIC_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        current = {}
+        if self.DYNAMIC_SETTINGS_PATH.exists():
+            try:
+                with open(self.DYNAMIC_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                    current = json.load(f)
+            except Exception:
+                current = {}
+        current.update(updates)
+        for k, v in updates.items():
+            if hasattr(self, k):
+                setattr(self, k, v)
+        tmp = self.DYNAMIC_SETTINGS_PATH.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2, ensure_ascii=False)
+        tmp.replace(self.DYNAMIC_SETTINGS_PATH)
 
     @property
     def EPISODES_DIR(self) -> Path:
@@ -80,3 +122,4 @@ class Settings(BaseSettings):
 # Singleton configuration instance
 settings = Settings()
 settings.ensure_directories()
+settings.load_dynamic_settings()

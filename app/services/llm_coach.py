@@ -1,8 +1,10 @@
 import json
 import logging
 import re
-from typing import Optional
+import time
+from typing import Dict, Optional, Tuple
 from openai import OpenAI
+import requests
 
 from app.config import settings
 from app.models import CoachCue, Segment, WorkoutRequest
@@ -62,25 +64,140 @@ Linee guida di stile:
 
 class LLMCoach:
     """
-    LLM integration for:
-    1. Parsing natural language workout prompts to structured WorkoutRequest.
-    2. Generating natural Italian spoken script for each coach cue.
+    Multi-provider LLM integration supporting:
+    - Ollama (Local)
+    - LM Studio (Local)
+    - Google Gemini (OpenAI-compatible)
+    - OpenAI / OpenAI-compatible
+    - Anthropic Claude (Messages API)
     """
 
-    def __init__(self) -> None:
-        self.api_key = settings.LLM_API_KEY
-        self.base_url = settings.LLM_BASE_URL
-        self.model = settings.LLM_MODEL
-        self._client: Optional[OpenAI] = None
+    def _get_provider_info(self) -> Tuple[str, str, str, str]:
+        """Fetch current settings dynamically."""
+        provider = settings.LLM_PROVIDER.lower().strip()
+        base_url = settings.LLM_BASE_URL.strip()
+        model = settings.LLM_MODEL.strip()
+        api_key = settings.LLM_API_KEY.strip()
 
-    @property
-    def client(self) -> Optional[OpenAI]:
-        if self._client is None and self.api_key:
-            self._client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
+        # Handle local providers with empty keys
+        if provider in ["ollama", "lmstudio"] and not api_key:
+            api_key = provider
+
+        return provider, base_url, model, api_key
+
+    def test_connection(self) -> Dict[str, any]:
+        """Test the current LLM connection and return status, response time, and output."""
+        provider, base_url, model, api_key = self._get_provider_info()
+        start_time = time.time()
+
+        try:
+            prompt = "Rispondi esclusivamente con la frase 'Running Coach Pronto' se ricevi questo messaggio."
+            text = self._call_llm(
+                system_prompt="Sei un assistente AI di test.",
+                user_prompt=prompt,
+                force_json=False
             )
-        return self._client
+            elapsed = round((time.time() - start_time) * 1000)
+            return {
+                "status": "success",
+                "provider": provider,
+                "model": model,
+                "response": text,
+                "elapsed_ms": elapsed
+            }
+        except Exception as e:
+            elapsed = round((time.time() - start_time) * 1000)
+            return {
+                "status": "error",
+                "provider": provider,
+                "model": model,
+                "error": str(e),
+                "elapsed_ms": elapsed
+            }
+
+    def _call_claude(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str
+    ) -> str:
+        """Direct call to Anthropic Claude Messages API."""
+        url = base_url.rstrip("/")
+        if not url.endswith("/messages"):
+            url = f"{url}/messages" if "/v1" in url else f"{url}/v1/messages"
+
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        body = {
+            "model": model,
+            "max_tokens": 1500,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": user_prompt}
+            ]
+        }
+        resp = requests.post(url, headers=headers, json=body, timeout=45)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Claude API Error (HTTP {resp.status_code}): {resp.text}")
+        data = resp.json()
+        return data["content"][0]["text"].strip()
+
+    def _call_openai_compatible(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        force_json: bool = False
+    ) -> str:
+        """Call an OpenAI-compatible endpoint (Gemini, OpenAI, Ollama, LM Studio)."""
+        client = OpenAI(api_key=api_key or "dummy", base_url=base_url)
+
+        kwargs = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.2 if force_json else 0.7,
+            "max_tokens": 1200 if force_json else 150
+        }
+        if force_json:
+            try:
+                # Some local models fail if response_format is passed
+                kwargs["response_format"] = {"type": "json_object"}
+                resp = client.chat.completions.create(**kwargs)
+                return resp.choices[0].message.content or "{}"
+            except Exception:
+                # Retry without explicit response_format for Ollama / LM Studio models
+                kwargs.pop("response_format", None)
+                resp = client.chat.completions.create(**kwargs)
+                return resp.choices[0].message.content or "{}"
+        else:
+            resp = client.chat.completions.create(**kwargs)
+            return resp.choices[0].message.content or ""
+
+    def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        force_json: bool = False
+    ) -> str:
+        """Unified dispatch to the configured LLM provider."""
+        provider, base_url, model, api_key = self._get_provider_info()
+
+        if provider == "claude" or "anthropic.com" in base_url:
+            if not api_key:
+                raise ValueError("Claude API Key mancante nelle impostazioni!")
+            return self._call_claude(base_url, model, api_key, system_prompt, user_prompt)
+        else:
+            return self._call_openai_compatible(base_url, model, api_key, system_prompt, user_prompt, force_json=force_json)
 
     def parse_prompt_to_workout(
         self,
@@ -89,21 +206,33 @@ class LLMCoach:
     ) -> WorkoutRequest:
         """
         Converts natural language dictation into a structured WorkoutRequest.
-        Uses LLM if API key is provided, or smart heuristic parser as robust fallback.
+        Uses LLM if configured, or smart heuristic parser as robust fallback.
         """
-        if self.client:
+        _, _, _, api_key = self._get_provider_info()
+        provider = settings.LLM_PROVIDER.lower().strip()
+
+        # Try LLM call if key is present or using local provider (Ollama / LM Studio)
+        if api_key or provider in ["ollama", "lmstudio"]:
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": WORKOUT_SYSTEM_PROMPT},
-                        {"role": "user", "content": f"Persona allenatore: {coach_persona}\nDescrizione: {prompt}"}
-                    ],
-                    temperature=0.2,
-                    response_format={"type": "json_object"}
+                raw_response = self._call_llm(
+                    system_prompt=WORKOUT_SYSTEM_PROMPT,
+                    user_prompt=f"Persona allenatore: {coach_persona}\nDescrizione: {prompt}",
+                    force_json=True
                 )
-                raw_json = response.choices[0].message.content or "{}"
-                data = json.loads(raw_json)
+                # Extract JSON even if wrapped in markdown code blocks
+                clean_json = raw_response.strip()
+                if "```json" in clean_json:
+                    clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+                elif "```" in clean_json:
+                    clean_json = clean_json.split("```")[1].split("```")[0].strip()
+
+                # Find first { and last }
+                start_idx = clean_json.find("{")
+                end_idx = clean_json.rfind("}")
+                if start_idx != -1 and end_idx != -1:
+                    clean_json = clean_json[start_idx:end_idx+1]
+
+                data = json.loads(clean_json)
                 return WorkoutRequest(**data)
             except Exception as e:
                 logger.warning("LLM parser failed: %s. Using heuristic fallback parser.", e)
@@ -113,12 +242,11 @@ class LLMCoach:
 
     def _heuristic_parse(self, prompt: str, persona: str) -> WorkoutRequest:
         """
-        Heuristic rule-based parser in Italian when no LLM API key is present.
+        Heuristic rule-based parser in Italian when no LLM is configured.
         """
         prompt_lower = prompt.lower()
         segments: List[Segment] = []
 
-        # Find numbers of minutes mentioned in prompt
         minutes_matches = re.findall(r"(\d+)\s*(?:min|minuti|m\b)", prompt_lower)
         durations = [int(m) * 60 for m in minutes_matches] if minutes_matches else [600, 1200, 600]
 
@@ -193,7 +321,7 @@ class LLMCoach:
         for segment in workout.segments:
             for cue in segment.coach_cues:
                 if cue.spoken_text and cue.spoken_text.strip():
-                    continue  # Already provided by user
+                    continue
 
                 cue.spoken_text = self._generate_cue_text(
                     intent=cue.intent,
@@ -216,7 +344,10 @@ class LLMCoach:
         """
         Generate Italian coaching phrase for a single cue.
         """
-        if self.client:
+        _, _, _, api_key = self._get_provider_info()
+        provider = settings.LLM_PROVIDER.lower().strip()
+
+        if api_key or provider in ["ollama", "lmstudio"]:
             try:
                 system_prompt = SCRIPT_SYSTEM_PROMPT.format(coach_persona=persona)
                 user_msg = (
@@ -224,18 +355,10 @@ class LLMCoach:
                     f"Obiettivo cue: {intent}\n"
                     f"Genera la frase esatta che dirai al runner."
                 )
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_msg}
-                    ],
-                    temperature=0.7,
-                    max_tokens=80
-                )
-                text = (response.choices[0].message.content or "").strip().strip('"')
-                if text:
-                    return text
+                text = self._call_llm(system_prompt, user_msg, force_json=False)
+                clean = text.strip().strip('"').strip("'")
+                if clean:
+                    return clean
             except Exception as e:
                 logger.debug("LLM cue script generation error: %s. Using heuristic template.", e)
 
@@ -266,7 +389,6 @@ class LLMCoach:
             else:
                 return "Allenamento concluso con successo! Ottima gestione delle energie. Fai qualche minuto di stretching."
 
-        # Generic default
         return f"{intent}. Mantieni il ritmo{pace_str} e concentrati sul movimento."
 
 

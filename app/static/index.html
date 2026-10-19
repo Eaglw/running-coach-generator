@@ -264,13 +264,135 @@
 
     <!-- TAB 4: SETTINGS -->
     <section id="tab-settings" class="hidden space-y-6">
-      <div class="glass-card rounded-2xl p-6 max-w-2xl">
-        <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <span>⚙️</span> Configurazione di Sistema
-        </h2>
-        <div id="settingsDetails" class="space-y-3 text-xs">
-          <div class="text-slate-500">Caricamento impostazioni in corso...</div>
+      <div class="glass-card rounded-2xl p-6 max-w-3xl space-y-6">
+        <div>
+          <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+            <span>⚙️</span> Configurazione LLM & TTS Engine
+          </h2>
+          <p class="text-xs text-slate-400">Scegli il provider di intelligenza artificiale e la voce neurale per il tuo running coach.</p>
         </div>
+
+        <!-- 1. LLM Provider Quick Presets -->
+        <div class="p-4 bg-slate-900/80 rounded-xl border border-slate-800 space-y-3">
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Seleziona Provider LLM con 1 Clic</label>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <button onclick="applyLlmPreset('ollama')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
+              <span>🦙</span> Ollama (Locale)
+            </button>
+            <button onclick="applyLlmPreset('lmstudio')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
+              <span>💻</span> LM Studio (Locale)
+            </button>
+            <button onclick="applyLlmPreset('gemini')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
+              <span>✨</span> Google Gemini
+            </button>
+            <button onclick="applyLlmPreset('openai')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
+              <span>🟢</span> OpenAI
+            </button>
+            <button onclick="applyLlmPreset('claude')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
+              <span>🧠</span> Anthropic Claude
+            </button>
+            <button onclick="applyLlmPreset('custom')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700 flex items-center gap-2 transition">
+              <span>⚙️</span> Custom OpenAI-compat.
+            </button>
+          </div>
+        </div>
+
+        <!-- LLM Form Fields -->
+        <div class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Provider Attivo</label>
+              <select id="cfgLlmProvider" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                <option value="gemini">Google Gemini</option>
+                <option value="ollama">Ollama (Local)</option>
+                <option value="lmstudio">LM Studio (Local)</option>
+                <option value="openai">OpenAI</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="custom">Custom (OpenAI-compatible)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Nome Modello</label>
+              <input type="text" id="cfgLlmModel" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="es. gemini-2.5-flash o llama3.2">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Base URL Endpoint API</label>
+            <input type="text" id="cfgLlmBaseUrl" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="https://api.openai.com/v1">
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs font-medium text-slate-400">API Key (opzionale per Ollama/LM Studio locale)</label>
+              <button type="button" onclick="toggleApiKeyVisibility()" class="text-[11px] text-slate-400 hover:text-slate-200 underline">Mostra/Nascondi</button>
+            </div>
+            <input type="password" id="cfgLlmApiKey" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="sk-...">
+          </div>
+
+          <!-- Test LLM Button & Response Box -->
+          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-1">
+            <button type="button" onclick="testLlmConnection()" id="testLlmBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 rounded-xl flex items-center gap-2 transition">
+              <span>🧪</span> Testa Connessione LLM
+            </button>
+            <div id="llmTestResult" class="hidden text-xs px-3 py-1.5 rounded-lg"></div>
+          </div>
+        </div>
+
+        <hr class="border-slate-800" />
+
+        <!-- 2. TTS Configuration -->
+        <div class="space-y-4">
+          <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+            <span>🗣️</span> Motore di Sintesi Vocale (TTS)
+          </h3>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">TTS Engine</label>
+              <select id="cfgTtsEngine" onchange="onTtsEngineChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                <option value="piper">Piper TTS (Neurale Locale ONNX)</option>
+                <option value="kokoro">Kokoro TTS (Neurale v1.0)</option>
+                <option value="fallback">Fallback Sistema (espeak-ng)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Voce Italiana</label>
+              <select id="cfgTtsVoice" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+                <option value="it_IT-riccardo-x_low">Riccardo (Maschile, Leggera) - it_IT-riccardo-x_low</option>
+                <option value="it_IT-paola-medium">Paola (Femminile, Media) - it_IT-paola-medium</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <hr class="border-slate-800" />
+
+        <!-- 3. Web & Podcast Settings -->
+        <div class="space-y-4">
+          <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+            <span>📻</span> Parametri Feed Podcast
+          </h3>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Base URL (Accessibile da Apple Watch)</label>
+              <input type="text" id="cfgBaseUrl" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500" placeholder="http://192.168.1.100:8000">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Titolo Canale Podcast</label>
+              <input type="text" id="cfgPodcastTitle" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500" placeholder="Running Coach Daily">
+            </div>
+          </div>
+        </div>
+
+        <!-- Save Button -->
+        <div class="pt-2 flex justify-end">
+          <button type="button" onclick="saveSettings()" id="saveSettingsBtn" class="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 font-semibold text-white text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition active:scale-[0.99]">
+            <span>💾</span> Salva Impostazioni
+          </button>
+        </div>
+
       </div>
     </section>
 
@@ -497,24 +619,169 @@
       }
     }
 
-    // Load Settings
+    // Apply LLM Preset
+    function applyLlmPreset(preset) {
+      const p = document.getElementById('cfgLlmProvider');
+      const u = document.getElementById('cfgLlmBaseUrl');
+      const m = document.getElementById('cfgLlmModel');
+      const k = document.getElementById('cfgLlmApiKey');
+
+      if (preset === 'ollama') {
+        p.value = 'ollama';
+        u.value = 'http://localhost:11434/v1';
+        m.value = 'llama3.2';
+        k.placeholder = 'Non richiesta per Ollama locale';
+      } else if (preset === 'lmstudio') {
+        p.value = 'lmstudio';
+        u.value = 'http://localhost:1234/v1';
+        m.value = 'local-model';
+        k.placeholder = 'Non richiesta per LM Studio';
+      } else if (preset === 'gemini') {
+        p.value = 'gemini';
+        u.value = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+        m.value = 'gemini-2.5-flash';
+        k.placeholder = 'Chiave API Google AI Studio';
+      } else if (preset === 'openai') {
+        p.value = 'openai';
+        u.value = 'https://api.openai.com/v1';
+        m.value = 'gpt-4o-mini';
+        k.placeholder = 'sk-...';
+      } else if (preset === 'claude') {
+        p.value = 'claude';
+        u.value = 'https://api.anthropic.com/v1';
+        m.value = 'claude-3-5-haiku-20241022';
+        k.placeholder = 'sk-ant-...';
+      } else if (preset === 'custom') {
+        p.value = 'custom';
+        k.placeholder = 'API Key se richiesta';
+      }
+    }
+
+    function toggleApiKeyVisibility() {
+      const input = document.getElementById('cfgLlmApiKey');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function onTtsEngineChanged() {
+      const engine = document.getElementById('cfgTtsEngine').value;
+      const voiceSelect = document.getElementById('cfgTtsVoice');
+      voiceSelect.innerHTML = '';
+
+      if (engine === 'piper') {
+        voiceSelect.innerHTML = `
+          <option value="it_IT-riccardo-x_low">Riccardo (Maschile, Leggera) - it_IT-riccardo-x_low</option>
+          <option value="it_IT-paola-medium">Paola (Femminile, Media) - it_IT-paola-medium</option>
+        `;
+      } else if (engine === 'kokoro') {
+        voiceSelect.innerHTML = `
+          <option value="im_nicola">Nicola (Maschile) - im_nicola</option>
+          <option value="if_sara">Sara (Femminile) - if_sara</option>
+        `;
+      } else {
+        voiceSelect.innerHTML = `
+          <option value="fallback">Voce di Sistema (espeak-ng / synth)</option>
+        `;
+      }
+    }
+
     async function loadSettings() {
       try {
         const res = await fetch('/api/v1/settings');
         const s = await res.json();
-        document.getElementById('settingsDetails').innerHTML = `
-          <div class="grid grid-cols-2 gap-2 bg-slate-900 p-4 rounded-xl border border-slate-800">
-            <span class="text-slate-400">BASE_URL:</span><span class="font-mono text-emerald-400">${s.BASE_URL}</span>
-            <span class="text-slate-400">LLM MODEL:</span><span class="font-mono text-white">${s.LLM_MODEL}</span>
-            <span class="text-slate-400">LLM BASE URL:</span><span class="font-mono text-slate-300 break-all">${s.LLM_BASE_URL}</span>
-            <span class="text-slate-400">TTS ENGINE:</span><span class="font-mono text-teal-400">${s.TTS_ENGINE}</span>
-            <span class="text-slate-400">TTS VOICE:</span><span class="font-mono text-slate-300">${s.TTS_VOICE}</span>
-            <span class="text-slate-400">MUSIC DIR:</span><span class="font-mono text-slate-300">${s.MUSIC_DIR}</span>
-            <span class="text-slate-400">PODCAST DIR:</span><span class="font-mono text-slate-300">${s.PODCAST_DIR}</span>
-          </div>
-        `;
+        if (document.getElementById('cfgLlmProvider')) document.getElementById('cfgLlmProvider').value = s.LLM_PROVIDER || 'gemini';
+        if (document.getElementById('cfgLlmModel')) document.getElementById('cfgLlmModel').value = s.LLM_MODEL || '';
+        if (document.getElementById('cfgLlmBaseUrl')) document.getElementById('cfgLlmBaseUrl').value = s.LLM_BASE_URL || '';
+        if (document.getElementById('cfgLlmApiKey')) document.getElementById('cfgLlmApiKey').value = s.LLM_API_KEY || '';
+        if (document.getElementById('cfgTtsEngine')) {
+          document.getElementById('cfgTtsEngine').value = s.TTS_ENGINE || 'piper';
+          onTtsEngineChanged();
+          document.getElementById('cfgTtsVoice').value = s.TTS_VOICE || 'it_IT-riccardo-x_low';
+        }
+        if (document.getElementById('cfgBaseUrl')) document.getElementById('cfgBaseUrl').value = s.BASE_URL || '';
+        if (document.getElementById('cfgPodcastTitle')) document.getElementById('cfgPodcastTitle').value = s.PODCAST_TITLE || '';
       } catch (e) {
-        console.error(e);
+        console.error('Failed to load settings:', e);
+      }
+    }
+
+    async function saveSettings() {
+      const btn = document.getElementById('saveSettingsBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Salvataggio...';
+
+      const payload = {
+        LLM_PROVIDER: document.getElementById('cfgLlmProvider').value,
+        LLM_MODEL: document.getElementById('cfgLlmModel').value.trim(),
+        LLM_BASE_URL: document.getElementById('cfgLlmBaseUrl').value.trim(),
+        LLM_API_KEY: document.getElementById('cfgLlmApiKey').value.trim(),
+        TTS_ENGINE: document.getElementById('cfgTtsEngine').value,
+        TTS_VOICE: document.getElementById('cfgTtsVoice').value,
+        BASE_URL: document.getElementById('cfgBaseUrl').value.trim(),
+        PODCAST_TITLE: document.getElementById('cfgPodcastTitle').value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/v1/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          btn.innerHTML = '<span>✅</span> Salvato!';
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<span>💾</span> Salva Impostazioni';
+          }, 2000);
+        } else {
+          alert('Errore durante il salvataggio');
+          btn.disabled = false;
+          btn.innerHTML = '<span>💾</span> Salva Impostazioni';
+        }
+      } catch (e) {
+        alert('Errore di connessione: ' + e);
+        btn.disabled = false;
+        btn.innerHTML = '<span>💾</span> Salva Impostazioni';
+      }
+    }
+
+    async function testLlmConnection() {
+      const btn = document.getElementById('testLlmBtn');
+      const box = document.getElementById('llmTestResult');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Test in corso...';
+      box.classList.add('hidden');
+
+      const tempUpdates = {
+        LLM_PROVIDER: document.getElementById('cfgLlmProvider').value,
+        LLM_MODEL: document.getElementById('cfgLlmModel').value.trim(),
+        LLM_BASE_URL: document.getElementById('cfgLlmBaseUrl').value.trim(),
+        LLM_API_KEY: document.getElementById('cfgLlmApiKey').value.trim()
+      };
+      await fetch('/api/v1/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tempUpdates)
+      });
+
+      try {
+        const res = await fetch('/api/v1/settings/test-llm', { method: 'POST' });
+        const data = await res.json();
+        box.classList.remove('hidden');
+
+        if (data.status === 'success') {
+          box.className = 'text-xs px-3 py-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300';
+          box.innerHTML = `<strong>✅ Connessione Riuscita (${data.elapsed_ms}ms)</strong>: ${data.response}`;
+        } else {
+          box.className = 'text-xs px-3 py-2 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300';
+          box.innerHTML = `<strong>❌ Errore (${data.elapsed_ms}ms)</strong>: ${data.error || 'Nessuna risposta'}`;
+        }
+      } catch (e) {
+        box.classList.remove('hidden');
+        box.className = 'text-xs px-3 py-2 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300';
+        box.innerHTML = `<strong>❌ Errore di connessione:</strong> ${e}`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🧪</span> Testa Connessione LLM';
       }
     }
 

@@ -304,17 +304,43 @@ async def get_episodes():
     summary="Get active configuration parameters"
 )
 async def get_active_settings():
-    """Return safe public runtime settings for Web GUI."""
+    """Return runtime settings for Web GUI."""
     return {
         "BASE_URL": settings.BASE_URL,
+        "LLM_PROVIDER": settings.LLM_PROVIDER,
         "LLM_MODEL": settings.LLM_MODEL,
         "LLM_BASE_URL": settings.LLM_BASE_URL,
+        "LLM_API_KEY": settings.LLM_API_KEY,
         "TTS_ENGINE": settings.TTS_ENGINE,
         "TTS_VOICE": settings.TTS_VOICE,
         "MUSIC_DIR": str(settings.MUSIC_DIR),
         "PODCAST_DIR": str(settings.PODCAST_DIR),
         "PODCAST_TITLE": settings.PODCAST_TITLE
     }
+
+
+@app.post(
+    "/api/v1/settings",
+    summary="Update and persist configuration parameters"
+)
+async def update_settings(updates: Dict[str, Any]):
+    """Update settings and persist to data/cache/settings.json."""
+    allowed = {
+        "BASE_URL", "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL",
+        "LLM_API_KEY", "TTS_ENGINE", "TTS_VOICE", "PODCAST_TITLE"
+    }
+    filtered = {k: v for k, v in updates.items() if k in allowed}
+    settings.save_dynamic_settings(filtered)
+    return {"message": "Settings updated and saved successfully.", "settings": await get_active_settings()}
+
+
+@app.post(
+    "/api/v1/settings/test-llm",
+    summary="Test current LLM connection and configuration"
+)
+async def test_llm_connection():
+    """Execute a test prompt with current LLM provider settings."""
+    return llm_coach.test_connection()
 
 
 @app.get(
